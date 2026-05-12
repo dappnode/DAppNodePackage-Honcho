@@ -200,7 +200,7 @@
       <div class="quick-links">
         <a href="#" onclick="event.preventDefault(); switchTab('setup')">
           Setup Wizard
-          <small>Change provider, model, API keys, and messaging integrations</small>
+          <small>Change provider and model</small>
         </a>
         <a href="#" onclick="event.preventDefault(); switchTab('terminal')">
           Web Terminal
@@ -222,7 +222,7 @@
   <div class="tab-content" id="tc-setup">
     <div class="page">
       <div class="progress" id="progress">
-        <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+        <div class="bar"></div><div class="bar"></div><div class="bar"></div>
       </div>
 
       <!-- Step 0: Provider -->
@@ -244,45 +244,8 @@
         </div>
       </div>
 
-      <!-- Step 2: Messaging + Integrations -->
+      <!-- Step 2: Review & Save -->
       <div class="step" data-step="2">
-        <h2>Integrations</h2>
-        <div class="subtitle">Optional — skip any you don't need.</div>
-        <div class="field">
-          <label>Telegram Bot Token <span class="optional-badge">optional</span></label>
-          <div class="hint">From <strong>@BotFather</strong> on Telegram.</div>
-          <input type="text" id="telegram-token" placeholder="123456789:ABCdefGHIjklMNO...">
-        </div>
-        <div class="field" id="telegram-users-field" style="display:none">
-          <label>Allowed Telegram User IDs <span class="optional-badge">optional</span></label>
-          <div class="hint">Comma-separated. Use <strong>@userinfobot</strong> to find yours.</div>
-          <input type="text" id="telegram-users" placeholder="123456789,987654321">
-        </div>
-        <div class="field">
-          <label>WhatsApp <span class="optional-badge">optional</span></label>
-          <div class="hint">Connects via the built-in Baileys bridge.</div>
-          <label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:6px;">
-            <input type="checkbox" id="whatsapp-enabled" style="width:auto;">
-            Enable WhatsApp
-          </label>
-          <div id="whatsapp-pair-notice" style="display:none; margin-top:10px; padding:10px 12px; background:rgba(255,215,0,0.12); border:1px solid var(--primary); border-radius:8px; font-size:0.85rem; line-height:1.5;">
-            <strong style="color:var(--primary);">→ Pairing required</strong><br>
-            After the Setup, open the <strong>Terminal</strong> tab and run <code>hermes whatsapp</code> to choose a mode and pair via QR code. You will need to manually restart the package after pairing to apply the changes. <br><br>
-          </div>
-        </div>
-        <div class="field" id="whatsapp-users-field" style="display:none">
-          <label>Allowed WhatsApp Phone Numbers <span class="optional-badge">optional</span></label>
-          <div class="hint">Comma-separated, with country code (e.g. <code>15551234567</code>). Use <code>*</code> to allow anyone (not recommended).</div>
-          <input type="text" id="whatsapp-users" placeholder="15551234567,447700900123">
-        </div>
-        <div class="actions">
-          <button class="btn btn-secondary" onclick="goTo(1)">Back</button>
-          <button class="btn btn-primary" onclick="showReview()">Review</button>
-        </div>
-      </div>
-
-      <!-- Step 3: Review & Save -->
-      <div class="step" data-step="3">
         <h2>Review &amp; Save</h2>
         <div class="subtitle">You can also edit these files from the Terminal tab, or re-run this wizard at any time.</div>
         <h3 style="margin-bottom:0.5rem;font-size:1rem;">.env changes</h3>
@@ -290,13 +253,13 @@
         <h3 style="margin-bottom:0.5rem;font-size:1rem;">config.yaml changes</h3>
         <div class="config-preview" id="config-preview"></div>
         <div class="actions">
-          <button class="btn btn-secondary" onclick="goTo(2)">Back</button>
+          <button class="btn btn-secondary" onclick="goTo(1)">Back</button>
           <button class="btn btn-primary" id="btn-save" onclick="saveConfig()">Save Configuration</button>
         </div>
       </div>
 
-      <!-- Step 4: Success -->
-      <div class="step" data-step="4">
+      <!-- Step 3: Success -->
+      <div class="step" data-step="3">
         <div class="success-icon">&#10003;</div>
         <h2 style="text-align:center">Configuration Saved!</h2>
         <div class="quick-links">
@@ -458,14 +421,6 @@
       document.getElementById("btn-step0").disabled = false;
     }
 
-    document.getElementById("telegram-token").addEventListener("input", (e) => {
-      document.getElementById("telegram-users-field").style.display = e.target.value.trim() ? "block" : "none";
-    });
-    document.getElementById("whatsapp-enabled").addEventListener("change", (e) => {
-      document.getElementById("whatsapp-users-field").style.display = e.target.checked ? "block" : "none";
-      document.getElementById("whatsapp-pair-notice").style.display = e.target.checked ? "block" : "none";
-    });
-
     // =========================================================================
     // Wizard navigation
     // =========================================================================
@@ -481,7 +436,7 @@
       });
       if (step === 1 && selectedProvider) renderProviderConfig();
       // Reset save button if returning to review step
-      if (step === 3) {
+      if (step === 2) {
         const btn = document.getElementById("btn-save");
         if (btn) { btn.disabled = false; btn.textContent = "Save Configuration"; }
       }
@@ -547,7 +502,7 @@
       if (p.id === "nexus") {
         container.innerHTML = `
           <h2>Configure DAppNode Nexus</h2>
-          <div class="subtitle">DAppNode's privacy-focused AI gateway. Your prompts are never logged, stored, or used for training. <a href="https://nexus.dappnode.com" target="_blank" style="color:var(--primary)">Sign up &amp; get your API key &rarr;</a></div>
+          <div class="subtitle">DAppNode's privacy-focused AI gateway. Your prompts are never logged, stored, or used for training. <a href="https://nexus.dappnode.com" target="_blank" style="color:var(--primary)">Learn more</a>.</div>
           <div class="field">
             <label>Nexus API Key</label>
             <div class="hint">Sign up at <strong>nexus.dappnode.com</strong> and create an API key from your dashboard.</div>
@@ -555,7 +510,7 @@
           </div>
           <div class="field">
             <label>Model</label>
-            <div class="hint">Browse the available models at <a href="https://nexus.dappnode.com/models" target="_blank" style="color:var(--primary)">nexus.dappnode.com/models</a> and paste the full <code>provider/model</code> ID below.</div>
+            <div class="hint">Browse the available models at <a href="https://nexus.dappnode.com/models" target="_blank" style="color:var(--primary)">nexus.dappnode.com/models</a> and paste the full model name.</div>
             <input type="text" id="nexus-model-input" placeholder="e.g. minimax/minimax-m2.7">
           </div>
         `;
@@ -765,17 +720,6 @@
           env.LLM_MODEL = p.id === "openrouter" ? model : p.id + "/" + model;
         }
       }
-      const tgToken = (document.getElementById("telegram-token").value || "").trim();
-      if (tgToken) {
-        env.TELEGRAM_BOT_TOKEN = tgToken;
-        const tgUsers = (document.getElementById("telegram-users").value || "").trim();
-        if (tgUsers) env.TELEGRAM_ALLOWED_USERS = tgUsers;
-      }
-      if (document.getElementById("whatsapp-enabled").checked) {
-        env.WHATSAPP_ENABLED = "true";
-        const waUsers = (document.getElementById("whatsapp-users").value || "").trim();
-        if (waUsers) env.WHATSAPP_ALLOWED_USERS = waUsers;
-      }
       return env;
     }
 
@@ -836,14 +780,13 @@
       }
       document.getElementById("env-preview").textContent = envLines.join("\n") || "(no changes)";
       document.getElementById("config-preview").textContent = yaml;
-      goTo(3);
+      goTo(2);
     }
 
     async function saveConfig() {
       const btn = document.getElementById("btn-save");
       btn.disabled = true; btn.textContent = "Saving...";
       const env = buildEnv();
-      const needsRestart = !!(env.TELEGRAM_BOT_TOKEN || env.WHATSAPP_ENABLED);
       try {
         const resp = await fetch("/api/config", {
           method: "POST",
@@ -851,10 +794,7 @@
           body: JSON.stringify({ env, configYaml: buildConfigYaml() })
         });
         if (resp.ok) {
-          goTo(4);
-          if (needsRestart) {
-            setTimeout(() => fetch("/api/restart", { method: "POST" }).catch(() => {}), 500);
-          }
+          goTo(3);
         } else {
           const data = await resp.json();
           alert("Failed: " + (data.error || "Unknown error"));
