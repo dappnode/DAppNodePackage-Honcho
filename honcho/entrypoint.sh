@@ -17,7 +17,7 @@ echo "=== Honcho Dappnode — ${ROLE} ==="
 
 case "${LLM_PROVIDER}" in
   local_ollama)
-    export LLM_VLLM_BASE_URL="http://ollama.dappnode:11434/v1"
+    export LLM_VLLM_BASE_URL="http://ollama-cpu.dappnode:11434/v1"
     export LLM_VLLM_API_KEY="ollama"
     echo "[LLM] Provider: Local Ollama at ${LLM_VLLM_BASE_URL}"
     ;;
@@ -43,7 +43,7 @@ case "${LLM_PROVIDER}" in
     ;;
   *)
     echo "[LLM] WARNING: Unknown provider '${LLM_PROVIDER}', defaulting to local_ollama"
-    export LLM_VLLM_BASE_URL="http://ollama.dappnode:11434/v1"
+    export LLM_VLLM_BASE_URL="http://ollama-cpu.dappnode:11434/v1"
     export LLM_VLLM_API_KEY="ollama"
     ;;
 esac
