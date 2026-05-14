@@ -1,0 +1,89 @@
+version: "2"
+fields:
+  - id: llmProvider
+    target:
+      type: environment
+      name: LLM_PROVIDER
+      service: [api, deriver]
+    title: AI Provider
+    description: >-
+      Select the AI brain for Honcho memory operations.
+      Local Ollama: fully private, zero cost (requires Ollama package).
+      OpenRouter: 200+ models via single API key.
+      OpenAI: GPT-4o family.
+      Anthropic: Claude models.
+      Custom: any OpenAI-compatible server.
+    enum:
+      - local_ollama
+      - openrouter
+      - openai
+      - anthropic
+      - custom
+    required: true
+
+  - id: ollamaModel
+    target:
+      type: environment
+      name: LLM_MODEL
+      service: [api, deriver]
+    title: Ollama Model
+    description: >-
+      Model name from your Ollama package (must support tool calling).
+      Recommended: qwen3:8b, mistral:7b, llama3.1:8b.
+    required: true
+    if: { "llmProvider": { "enum": ["local_ollama"] } }
+
+  - id: cloudApiKey
+    target:
+      type: environment
+      name: LLM_API_KEY
+      service: [api, deriver]
+    title: API Key
+    description: Your API key for the selected cloud provider.
+    secret: true
+    required: true
+    if: { "llmProvider": { "enum": ["openrouter", "openai", "anthropic"] } }
+
+  - id: cloudModel
+    target:
+      type: environment
+      name: LLM_MODEL
+      service: [api, deriver]
+    title: Model
+    description: >-
+      Model ID for the selected provider.
+      OpenRouter: google/gemini-flash-1.5, openai/gpt-4o-mini.
+      OpenAI: gpt-4o-mini. Anthropic: claude-haiku-4-5.
+    required: true
+    if: { "llmProvider": { "enum": ["openrouter", "openai", "anthropic"] } }
+
+  - id: customBaseUrl
+    target:
+      type: environment
+      name: LLM_BASE_URL
+      service: [api, deriver]
+    title: API Base URL
+    description: >-
+      Full base URL of your OpenAI-compatible endpoint including /v1 path.
+    required: true
+    if: { "llmProvider": { "enum": ["custom"] } }
+
+  - id: customApiKey
+    target:
+      type: environment
+      name: LLM_API_KEY
+      service: [api, deriver]
+    title: API Key (optional)
+    description: Leave blank if your endpoint does not require authentication.
+    secret: true
+    if: { "llmProvider": { "enum": ["custom"] } }
+
+  - id: customModel
+    target:
+      type: environment
+      name: LLM_MODEL
+      service: [api, deriver]
+    title: Model Name
+    description: Model identifier as expected by your custom endpoint.
+    required: true
+    if: { "llmProvider": { "enum": ["custom"] } }
