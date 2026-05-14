@@ -78,6 +78,18 @@ fields:
     secret: true
     if: { "llmProvider": { "enum": ["custom"] } }
 
+  - id: llmTimeout
+    target:
+      type: environment
+      name: LLM_REQUEST_TIMEOUT
+      service: [api, deriver]
+    title: LLM Request Timeout (seconds)
+    description: >-
+      Maximum time in seconds to wait for LLM responses.
+      Increase this for CPU-only Ollama (recommended: 180-300).
+      Default: 120 for local Ollama, 30 for cloud providers.
+    required: false
+    
   - id: customModel
     target:
       type: environment
