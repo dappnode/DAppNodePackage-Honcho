@@ -1,4 +1,4 @@
-# DAppNodePackage-honcho
+# Honcho Memory Layer for AI
 
 Self-sovereign AI memory layer for Dappnode — packages [Honcho](https://github.com/plastic-labs/honcho) using the community-proven [honcho-self-hosted](https://github.com/elkimek/honcho-self-hosted) configuration.
 
@@ -33,14 +33,6 @@ http://setup-wizard.honcho.dappnode:8080
 ## Backup
 
 Use the **Backup** button in the Dappnode admin UI. It bundles a PostgreSQL dump of all memory data.
-
-## Development
-
-```bash
-git clone https://github.com/dappnode/DAppNodePackage-honcho
-cd DAppNodePackage-honcho
-npx @dappnode/dappnodesdk build
-```
 
 ## Upstream
 
