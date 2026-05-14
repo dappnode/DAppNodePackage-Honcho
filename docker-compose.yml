@@ -17,6 +17,7 @@ services:
       LLM_PROVIDER: openrouter
       LLM_MODEL: google/gemini-flash-1.5
       LLM_API_KEY: ""
+      LLM_REQUEST_TIMEOUT: "120"
       LLM_BASE_URL: ""
       POSTGRES_USER: honcho
       POSTGRES_PASSWORD: honcho
@@ -38,6 +39,7 @@ services:
       LLM_PROVIDER: openrouter
       LLM_MODEL: google/gemini-flash-1.5
       LLM_API_KEY: ""
+      LLM_REQUEST_TIMEOUT: "120"
       LLM_BASE_URL: ""
   setup-wizard:
     build:
