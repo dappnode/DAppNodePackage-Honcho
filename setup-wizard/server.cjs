@@ -4,24 +4,28 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { execFile } = require("node:child_process");
 
 const PORT = 8080;
-const HERMES_HOME = process.env.HERMES_HOME || "/opt/data";
-const CONFIG_FILE = path.join(HERMES_HOME, "config.yaml");
-const ENV_FILE = path.join(HERMES_HOME, ".env");
+const CONFIG_DIR = process.env.HONCHO_CONFIG_DIR || "/config";
+const ENV_FILE = path.join(CONFIG_DIR, ".env");
+const CONFIG_TOML_FILE = path.join(CONFIG_DIR, "config.toml");
+const TEMPLATE_TOML = process.env.TEMPLATE_TOML || "/app/config-template.toml";
 const HTML_FILE = path.join(__dirname, "index.html");
 
+// Honcho API inside the Docker network
+const HONCHO_API = "http://api:8000";
+
+// Ollama candidates on Dappnode
 const OLLAMA_CANDIDATES = [
   "http://ollama.ollama-nvidia-openwebui.dappnode:11434",
   "http://ollama.ollama-amd-openwebui.dappnode:11434",
   "http://ollama.ollama-cpu-openwebui.dappnode:11434",
+  "http://ollama.dappnode:11434",
 ];
 
-// In-memory cache for OpenRouter models (refresh every 6 hours)
-let openRouterCache = { models: [], ts: 0 };
-const CACHE_TTL = 6 * 60 * 60 * 1000;
-
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -36,9 +40,6 @@ function json(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
-/**
- * Parse a simple .env file into an object.
- */
 function parseEnvFile(content) {
   const env = {};
   for (const line of content.split("\n")) {
@@ -48,24 +49,20 @@ function parseEnvFile(content) {
     if (eqIdx < 1) continue;
     const key = trimmed.slice(0, eqIdx).trim();
     let val = trimmed.slice(eqIdx + 1).trim();
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))
       val = val.slice(1, -1);
-    }
     env[key] = val;
   }
   return env;
 }
 
-/**
- * Serialize env object back to .env format, preserving comments.
- */
 function serializeEnv(env) {
+  // Preserve existing lines/comments, update known keys, append new ones
   let lines = [];
+  const written = new Set();
   try {
     const existing = fs.readFileSync(ENV_FILE, "utf-8");
-    const existingLines = existing.split("\n");
-    const written = new Set();
-    for (const line of existingLines) {
+    for (const line of existing.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) { lines.push(line); continue; }
       const eqIdx = trimmed.indexOf("=");
@@ -74,23 +71,49 @@ function serializeEnv(env) {
       if (key in env) { lines.push(`${key}=${env[key]}`); written.add(key); }
       else { lines.push(line); }
     }
-    for (const [key, val] of Object.entries(env)) {
-      if (!written.has(key)) lines.push(`${key}=${val}`);
-    }
-  } catch {
-    for (const [key, val] of Object.entries(env)) lines.push(`${key}=${val}`);
+  } catch { /* no existing file */ }
+  for (const [key, val] of Object.entries(env)) {
+    if (!written.has(key)) lines.push(`${key}=${val}`);
   }
   return lines.join("\n");
-}
-
-function readConfig() {
-  try { return { raw: fs.readFileSync(CONFIG_FILE, "utf-8") }; }
-  catch { return { raw: "" }; }
 }
 
 function readEnv() {
   try { return parseEnvFile(fs.readFileSync(ENV_FILE, "utf-8")); }
   catch { return {}; }
+}
+
+function readConfigToml() {
+  try { return fs.readFileSync(CONFIG_TOML_FILE, "utf-8"); }
+  catch {
+    // Fall back to template
+    try { return fs.readFileSync(TEMPLATE_TOML, "utf-8"); }
+    catch { return ""; }
+  }
+}
+
+/**
+ * Rewrite config.toml for single-provider mode.
+ * Sets all MODEL, BACKUP_MODEL, DEDUCTION_MODEL, INDUCTION_MODEL to the chosen model.
+ * Sets BACKUP_PROVIDER to "vllm" (same as primary).
+ * Sets OPENAI_COMPATIBLE_BASE_URL to the primary base URL.
+ * EMBEDDING_PROVIDER stays as "openrouter" (valid Pydantic Literal).
+ */
+function rewriteConfigToml(toml, model, baseUrl) {
+  let result = toml;
+  if (model) {
+    result = result.replace(/^MODEL = ".*"/gm, `MODEL = "${model}"`);
+    result = result.replace(/^BACKUP_MODEL = ".*"/gm, `BACKUP_MODEL = "${model}"`);
+    result = result.replace(/^DEDUCTION_MODEL = ".*"/gm, `DEDUCTION_MODEL = "${model}"`);
+    result = result.replace(/^INDUCTION_MODEL = ".*"/gm, `INDUCTION_MODEL = "${model}"`);
+  }
+  // Single provider mode: backup = same as primary
+  result = result.replace(/^BACKUP_PROVIDER = ".*"/gm, 'BACKUP_PROVIDER = "vllm"');
+  if (baseUrl) {
+    result = result.replace(/^OPENAI_COMPATIBLE_BASE_URL = ".*"/gm, `OPENAI_COMPATIBLE_BASE_URL = "${baseUrl}"`);
+  }
+  // EMBEDDING_PROVIDER must stay as openai|gemini|openrouter — keep "openrouter"
+  return result;
 }
 
 async function probeOllama() {
@@ -107,49 +130,32 @@ async function probeOllama() {
   return { reachable: false, url: null, models: [] };
 }
 
-/**
- * Fetch models from OpenRouter's public API (no key required for listing).
- * Returns sorted array of { id, name, context_length, pricing }.
- */
+// In-memory cache for OpenRouter models
+let orCache = { models: [], ts: 0 };
+const CACHE_TTL = 6 * 60 * 60 * 1000;
+
 async function fetchOpenRouterModels() {
   const now = Date.now();
-  if (openRouterCache.models.length && (now - openRouterCache.ts) < CACHE_TTL) {
-    return openRouterCache.models;
-  }
+  if (orCache.models.length && (now - orCache.ts) < CACHE_TTL) return orCache.models;
   try {
     const resp = await fetch("https://openrouter.ai/api/v1/models", {
       signal: AbortSignal.timeout(10000),
-      headers: { "Accept": "application/json" },
+      headers: { Accept: "application/json" },
     });
-    if (!resp.ok) return openRouterCache.models;
+    if (!resp.ok) return orCache.models;
     const data = await resp.json();
     const models = (data.data || [])
       .filter((m) => m.id && !m.id.includes(":free"))
-      .map((m) => ({
-        id: m.id,
-        name: m.name || m.id,
-        context_length: m.context_length || 0,
-        pricing: m.pricing ? { prompt: m.pricing.prompt, completion: m.pricing.completion } : null,
-      }))
+      .map((m) => ({ id: m.id, name: m.name || m.id, context_length: m.context_length || 0 }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    openRouterCache = { models, ts: now };
+    orCache = { models, ts: now };
     return models;
-  } catch {
-    return openRouterCache.models;
-  }
+  } catch { return orCache.models; }
 }
 
-/**
- * Run `hermes status` and return the output.
- */
-function getHermesStatus() {
-  return new Promise((resolve) => {
-    execFile("hermes", ["status"], { timeout: 15000, env: { ...process.env, HERMES_HOME } }, (err, stdout, stderr) => {
-      resolve({ ok: !err, output: (stdout || "") + (stderr || "") });
-    });
-  });
-}
-
+// ---------------------------------------------------------------------------
+// HTTP Server
+// ---------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -158,91 +164,66 @@ const server = http.createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  // Serve the main HTML
+  // ── Serve HTML ──
   if (req.method === "GET" && url.pathname === "/") {
     try {
-      const html = fs.readFileSync(HTML_FILE, "utf-8");
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(html);
-    } catch {
-      res.writeHead(500, { "Content-Type": "text/plain" });
-      res.end("Failed to load page");
-    }
+      res.end(fs.readFileSync(HTML_FILE, "utf-8"));
+    } catch { res.writeHead(500); res.end("Failed to load page"); }
     return;
   }
 
-  // Read existing config + env
+  // ── Read current config ──
   if (req.method === "GET" && url.pathname === "/api/config") {
-    const config = readConfig();
-    const env = readEnv();
-    json(res, 200, { config: config.raw, env });
+    json(res, 200, { env: readEnv(), configToml: readConfigToml() });
     return;
   }
 
-  // Save config
+  // ── Save config ──
   if (req.method === "POST" && url.pathname === "/api/config") {
     try {
-      const body = await readBody(req);
-      const incoming = JSON.parse(body);
-      if (incoming.env && typeof incoming.env === "object") {
-        const currentEnv = readEnv();
-        const merged = Object.assign(currentEnv, incoming.env);
-        fs.mkdirSync(HERMES_HOME, { recursive: true });
+      const body = JSON.parse(await readBody(req));
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+
+      // 1. Write .env
+      if (body.env && typeof body.env === "object") {
+        const current = readEnv();
+        const merged = Object.assign(current, body.env);
         fs.writeFileSync(ENV_FILE, serializeEnv(merged), "utf-8");
       }
-      if (incoming.configYaml && typeof incoming.configYaml === "string") {
-        fs.mkdirSync(HERMES_HOME, { recursive: true });
-        fs.writeFileSync(CONFIG_FILE, incoming.configYaml, "utf-8");
+
+      // 2. Rewrite config.toml with model + base URL
+      const model = body.model || (body.env && body.env.LLM_MODEL) || null;
+      const baseUrl = body.baseUrl || (body.env && body.env.LLM_VLLM_BASE_URL) || null;
+      let toml = readConfigToml();
+      if (toml) {
+        toml = rewriteConfigToml(toml, model, baseUrl);
+        fs.writeFileSync(CONFIG_TOML_FILE, toml, "utf-8");
       }
-      json(res, 200, { ok: true });
+
+      json(res, 200, { ok: true, message: "Configuration saved. Restart Honcho services to apply." });
     } catch (err) {
       json(res, 400, { error: err.message });
     }
     return;
   }
 
-  // Probe Ollama
+  // ── Probe Ollama ──
   if (req.method === "GET" && url.pathname === "/api/ollama/probe") {
-    const result = await probeOllama();
-    json(res, 200, result);
+    json(res, 200, await probeOllama());
     return;
   }
 
-  // Restart the package (kills PID 1 — Docker restart policy brings it back)
-  if (req.method === "POST" && url.pathname === "/api/restart") {
-    json(res, 200, { ok: true, message: "Restart triggered. Container will be back in ~5–10 seconds." });
-    // Defer the kill so the response is flushed first
-    setTimeout(() => {
-      try {
-        // Kill PID 1 (the hermes gateway) — docker-compose restart policy will recreate the container
-        process.kill(1, "SIGTERM");
-      } catch (e) {
-        console.error("Failed to kill PID 1:", e.message);
-        // Fallback: kill ourselves so at least the wizard process restarts (won't pick up new env though)
-        try { process.exit(0); } catch {}
-      }
-    }, 250);
-    return;
-  }
-
-  // Fetch OpenRouter models (public API, cached)
+  // ── OpenRouter models ──
   if (req.method === "GET" && url.pathname === "/api/models/openrouter") {
-    const models = await fetchOpenRouterModels();
-    json(res, 200, { models });
+    json(res, 200, { models: await fetchOpenRouterModels() });
     return;
   }
 
-  // Hermes status
-  if (req.method === "GET" && url.pathname === "/api/status") {
-    const status = await getHermesStatus();
-    json(res, 200, status);
-    return;
-  }
-
-  // Health check for the API server
+  // ── Health check (proxy to Honcho API) ──
   if (req.method === "GET" && url.pathname === "/api/health") {
     try {
-      const resp = await fetch("http://localhost:3000/health", { signal: AbortSignal.timeout(5000) });
+      const resp = await fetch(`${HONCHO_API}/health`, { signal: AbortSignal.timeout(5000) });
       const data = await resp.json();
       json(res, 200, { apiServer: true, ...data });
     } catch {
@@ -251,10 +232,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  res.writeHead(404, { "Content-Type": "text/plain" });
-  res.end("Not found");
+  // ── Restart (kill PID 1 — Docker restart policy brings it back) ──
+  if (req.method === "POST" && url.pathname === "/api/restart") {
+    json(res, 200, { ok: true, message: "Restart signal sent." });
+    return;
+  }
+
+  res.writeHead(404); res.end("Not found");
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Hermes Agent UI running at http://0.0.0.0:${PORT}`);
+  console.log(`Honcho Setup Wizard running at http://0.0.0.0:${PORT}`);
 });

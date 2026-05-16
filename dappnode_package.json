@@ -1,14 +1,17 @@
 {
   "name": "honcho.dnp.dappnode.eth",
   "version": "0.1.0",
-  "upstreamVersion": "v3.0.6",
+  "upstreamVersion": "v3.0.0",
   "upstreamRepo": "chuygarcia92/honcho-self-hosted",
   "upstreamArg": "UPSTREAM_VERSION",
   "shortDescription": "Self-sovereign AI memory layer for Hermes and OpenClaw agents.",
   "description": "Honcho is an open-source memory platform that gives your AI agents persistent, reasoning-backed memory across sessions. Based on the community-proven honcho-self-hosted project.\n\n**What Honcho does:**\n- Extracts observations from every message (Deriver)\n- Answers natural-language questions about users on demand (Dialectic)\n- Compresses long sessions into concise summaries (Summary)\n- Consolidates and refines stored memories periodically (Dream)\n\n**Endpoint:** `http://honcho.dappnode:8000`\n\n**LLM requirement:** Use the Setup Wizard to connect Honcho to your local Ollama package or any cloud API provider.",
   "type": "service",
   "mainService": "api",
-  "architectures": ["linux/amd64", "linux/arm64"],
+  "architectures": [
+    "linux/amd64",
+    "linux/arm64"
+  ],
   "requirements": {
     "minimumDappnodeVersion": "0.2.30"
   },
@@ -17,6 +20,11 @@
       "name": "honcho-db-dump",
       "path": "/backup/honcho.sql",
       "service": "api"
+    },
+    {
+      "name": "honcho-llm-config",
+      "path": "/config/.env",
+      "service": "setup-wizard"
     }
   ],
   "changelog": "Initial release. Packages Honcho v3 using honcho-self-hosted config overlay with Dappnode Setup Wizard UI.",
