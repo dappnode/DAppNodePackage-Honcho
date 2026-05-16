@@ -1,10 +1,10 @@
-FROM nginx:alpine
+FROM node:20-alpine
 
-# Remove default nginx page
-RUN rm -rf /usr/share/nginx/html/*
+WORKDIR /app
 
-# Copy the web UI
-COPY index.html /usr/share/nginx/html/index.html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY server.cjs /app/server.cjs
+COPY index.html /app/index.html
 
-EXPOSE 80
+EXPOSE 8080
+
+CMD ["node", "/app/server.cjs"]
