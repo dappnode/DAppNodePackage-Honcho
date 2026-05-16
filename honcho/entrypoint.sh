@@ -17,7 +17,7 @@ echo "=== Honcho Dappnode — ${ROLE} ==="
 
 case "${LLM_PROVIDER}" in
   local_ollama)
-    export LLM_VLLM_BASE_URL="http://ollama-cpu.dappnode:11434/v1"
+    export LLM_VLLM_BASE_URL="http://ollama.dappnode:11434/v1"
     export LLM_VLLM_API_KEY="ollama"
     echo "[LLM] Provider: Local Ollama at ${LLM_VLLM_BASE_URL}"
     ;;
@@ -43,7 +43,7 @@ case "${LLM_PROVIDER}" in
     ;;
   *)
     echo "[LLM] WARNING: Unknown provider '${LLM_PROVIDER}', defaulting to local_ollama"
-    export LLM_VLLM_BASE_URL="http://ollama-cpu.dappnode:11434/v1"
+    export LLM_VLLM_BASE_URL="http://ollama.dappnode:11434/v1"
     export LLM_VLLM_API_KEY="ollama"
     ;;
 esac
@@ -58,13 +58,36 @@ export AUTH_USE_AUTH=false
 
 echo "[LLM] Model: ${LLM_MODEL:-default}"
 
-# ── 2. Override model names in config.toml if LLM_MODEL is set ─
-# The honcho-self-hosted config.toml has placeholder model names.
-# If the user specified a model in the wizard, override them.
-if [ -n "${LLM_MODEL}" ] && [ -f /app/config.toml ]; then
-  # Use sed to replace model names in all worker sections
-  sed -i "s|model = \".*\"|model = \"${LLM_MODEL}\"|g" /app/config.toml
-  echo "[Config] Updated config.toml model to: ${LLM_MODEL}"
+# ── 2. Rewrite config.toml for single-provider Dappnode mode ──
+# The honcho-self-hosted config.toml has hardcoded model names for
+# OpenRouter/xAI/Venice across 12+ fields. In Dappnode, the user picks
+# ONE provider and ONE model via the setup wizard. We rewrite everything
+# to point at that single provider + model.
+if [ -f /app/config.toml ]; then
+
+  # 2a. Replace ALL model references (primary, backup, deduction, induction)
+  #     TOML keys are uppercase: MODEL, BACKUP_MODEL, DEDUCTION_MODEL, INDUCTION_MODEL
+  if [ -n "${LLM_MODEL}" ]; then
+    sed -i "s|^MODEL = \".*\"|MODEL = \"${LLM_MODEL}\"|g" /app/config.toml
+    sed -i "s|^BACKUP_MODEL = \".*\"|BACKUP_MODEL = \"${LLM_MODEL}\"|g" /app/config.toml
+    sed -i "s|^DEDUCTION_MODEL = \".*\"|DEDUCTION_MODEL = \"${LLM_MODEL}\"|g" /app/config.toml
+    sed -i "s|^INDUCTION_MODEL = \".*\"|INDUCTION_MODEL = \"${LLM_MODEL}\"|g" /app/config.toml
+    echo "[Config] All model references set to: ${LLM_MODEL}"
+  fi
+
+  # 2b. Point the backup provider at the SAME endpoint as primary
+  #     (Dappnode uses one provider — no Venice/OpenRouter fallback)
+  sed -i "s|^BACKUP_PROVIDER = \".*\"|BACKUP_PROVIDER = \"vllm\"|g" /app/config.toml
+  echo "[Config] Backup provider set to same as primary (vllm)"
+
+  # 2c. Override the hardcoded Venice backup base URL
+  sed -i "s|^OPENAI_COMPATIBLE_BASE_URL = \".*\"|OPENAI_COMPATIBLE_BASE_URL = \"${LLM_VLLM_BASE_URL}\"|g" /app/config.toml
+  echo "[Config] Backup base URL set to: ${LLM_VLLM_BASE_URL}"
+
+  # 2d. Set embedding provider to vllm (same endpoint)
+  sed -i "s|^EMBEDDING_PROVIDER = \".*\"|EMBEDDING_PROVIDER = \"vllm\"|g" /app/config.toml
+
+  echo "[Config] config.toml rewritten for single-provider Dappnode mode"
 fi
 
 # ── 3. Role-based startup ────────────────────────────────────
