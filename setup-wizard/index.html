@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Honcho — Dappnode</title>
+  <style>
+    :root {
+      --primary: #7c3aed;
+      --primary-dark: #6d2ed4;
+      --accent: #a78bfa;
+      --bg: #0f1117;
+      --card: #1a1d2e;
+      --card-hover: #222640;
+      --border: #2d3148;
+      --text: #e4e4ed;
+      --text-muted: #8b8fa3;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --error: #f87171;
+      --radius: 12px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .topnav { display: flex; align-items: center; gap: 2rem; border-bottom: 1px solid var(--border); padding: 0 2rem; background: var(--card); }
+    .topnav .logo { font-weight: 700; font-size: 1.1rem; padding: 1rem 0; color: var(--primary); white-space: nowrap; }
+    .topnav .tabs { display: flex; gap: 0; margin-left: 1rem; }
+    .topnav .tab { padding: 1rem 1.25rem; font-size: 0.9rem; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; user-select: none; }
+    .topnav .tab:hover { color: var(--text); }
+    .topnav .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .page { max-width: 720px; margin: 0 auto; padding: 2rem 1rem; }
+    .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1.5rem; }
+    @media (max-width: 540px) { .status-grid { grid-template-columns: 1fr; } }
+    .status-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.25rem; }
+    .status-card .label { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 4px; }
+    .status-card .value { font-size: 1.05rem; font-weight: 600; }
+    .status-card .value.ok { color: var(--success); }
+    .status-card .value.err { color: var(--error); }
+    .status-card .value.warn { color: var(--warning); }
+    .quick-links { display: flex; flex-direction: column; gap: 10px; margin-top: 1.5rem; }
+    .quick-links a { display: block; padding: 12px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-decoration: none; font-size: 0.9rem; transition: border 0.2s; }
+    .quick-links a:hover { border-color: var(--primary); }
+    .quick-links a small { color: var(--text-muted); display: block; margin-top: 2px; font-size: 0.8rem; }
+    .progress { display: flex; gap: 6px; margin-bottom: 2rem; }
+    .progress .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--border); transition: background 0.3s; }
+    .progress .bar.active { background: var(--primary); }
+    .progress .bar.done { background: var(--success); }
+    .step { display: none; }
+    .step.active { display: block; }
+    .step h2 { font-size: 1.35rem; margin-bottom: 0.5rem; }
+    .step .subtitle { color: var(--text-muted); margin-bottom: 1.5rem; font-size: 0.95rem; line-height: 1.5; }
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
+    @media (max-width: 480px) { .cards { grid-template-columns: 1fr; } }
+    .card { background: var(--card); border: 2px solid var(--border); border-radius: var(--radius); padding: 1rem; cursor: pointer; transition: all 0.2s; }
+    .card:hover { background: var(--card-hover); border-color: var(--primary); }
+    .card.selected { border-color: var(--primary); background: var(--card-hover); }
+    .card .card-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; }
+    .card .card-desc { color: var(--text-muted); font-size: 0.8rem; line-height: 1.4; }
+    .card .card-tag { display: inline-block; font-size: 0.7rem; padding: 2px 8px; border-radius: 99px; margin-top: 6px; background: rgba(124,58,237,0.15); color: var(--primary); }
+    .card .card-tag.free { background: rgba(52,211,153,0.15); color: var(--success); }
+    .card.featured { grid-column: 1 / -1; background: linear-gradient(135deg, rgba(124,58,237,0.08), rgba(124,58,237,0.02)); border-color: var(--primary); position: relative; padding: 1.25rem; }
+    .card.featured:hover { background: linear-gradient(135deg, rgba(124,58,237,0.14), rgba(124,58,237,0.04)); }
+    .card.featured.selected { background: linear-gradient(135deg, rgba(124,58,237,0.18), rgba(124,58,237,0.06)); }
+    .card.featured .card-title { font-size: 1.1rem; margin-bottom: 6px; }
+    .card.featured .card-desc { font-size: 0.9rem; }
+    .card.featured .card-tag { position: absolute; top: 10px; right: 12px; margin-top: 0; background: var(--primary); color: #fff; font-weight: 600; }
+    .field { margin-bottom: 1.25rem; }
+    .field label { display: block; font-size: 0.9rem; font-weight: 500; margin-bottom: 6px; }
+    .field .hint { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 8px; line-height: 1.4; }
+    .field input, .field select { width: 100%; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; outline: none; transition: border 0.2s; }
+    .field input:focus, .field select:focus { border-color: var(--primary); }
+    .field input::placeholder { color: var(--text-muted); }
+    .model-input-wrap { position: relative; }
+    .model-suggestions { display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 10; max-height: 220px; overflow-y: auto; background: var(--card); border: 1px solid var(--border); border-radius: 0 0 8px 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    .model-suggestions.open { display: block; }
+    .model-suggestions .sg-item { padding: 8px 14px; cursor: pointer; font-size: 0.85rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+    .model-suggestions .sg-item:hover { background: var(--card-hover); }
+    .model-suggestions .sg-item .sg-id { color: var(--text); }
+    .model-suggestions .sg-item .sg-ctx { color: var(--text-muted); font-size: 0.75rem; }
+    .model-suggestions .sg-loading { padding: 12px 14px; color: var(--text-muted); font-size: 0.85rem; }
+    .actions { display: flex; gap: 12px; margin-top: 2rem; }
+    .btn { padding: 12px 28px; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: var(--primary); color: white; flex: 1; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: var(--card); border: 1px solid var(--border); color: var(--text); }
+    .btn-secondary:hover { background: var(--card-hover); }
+    .probe-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.85rem; cursor: pointer; margin-bottom: 1rem; }
+    .probe-btn:hover { border-color: var(--primary); }
+    .probe-result { padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 1rem; line-height: 1.5; }
+    .probe-result.ok { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
+    .probe-result.fail { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+    .config-preview { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; font-family: 'SF Mono','Fira Code',monospace; font-size: 0.8rem; line-height: 1.6; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre; color: var(--text-muted); }
+    .success-icon { font-size: 3rem; text-align: center; margin-bottom: 1rem; }
+    .worker-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .worker-row:last-child { border-bottom: none; }
+    .worker-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .worker-dot.active { background: var(--success); }
+    .worker-dot.inactive { background: var(--text-muted); }
+    .worker-name { font-size: 0.9rem; font-weight: 500; flex: 1; }
+    .worker-role { font-size: 0.8rem; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="logo">&#9679; Honcho Memory</div>
+  <div class="tabs">
+    <div class="tab active" data-tab="dashboard">Dashboard</div>
+    <div class="tab" data-tab="setup">Setup</div>
+  </div>
+</nav>
+
+<!-- ==================== DASHBOARD ==================== -->
+<div class="tab-content active" id="tc-dashboard">
+  <div class="page">
+    <h2 style="margin-bottom:1.25rem">Agent Overview</h2>
+    <div class="status-grid">
+      <div class="status-card"><div class="label">Honcho API</div><div class="value" id="st-api">Checking...</div></div>
+      <div class="status-card"><div class="label">Health</div><div class="value" id="st-health">Checking...</div></div>
+      <div class="status-card"><div class="label">Provider</div><div class="value" id="st-provider">—</div></div>
+      <div class="status-card"><div class="label">Model</div><div class="value" id="st-model">—</div></div>
+    </div>
+
+    <h3 style="margin-bottom:0.75rem">Workers</h3>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-bottom:1.5rem;">
+      <div class="worker-row"><div class="worker-dot" id="dot-deriver"></div><span class="worker-name">Deriver</span><span class="worker-role">Extracts observations from every message</span></div>
+      <div class="worker-row"><div class="worker-dot" id="dot-dialectic"></div><span class="worker-name">Dialectic</span><span class="worker-role">Answers questions about users on demand</span></div>
+      <div class="worker-row"><div class="worker-dot" id="dot-summary"></div><span class="worker-name">Summary</span><span class="worker-role">Compresses long sessions</span></div>
+      <div class="worker-row"><div class="worker-dot" id="dot-dream"></div><span class="worker-name">Dream</span><span class="worker-role">Consolidates and refines memories</span></div>
+    </div>
+
+    <h3 style="margin-bottom:0.75rem">Quick Links</h3>
+    <div class="quick-links">
+      <a href="#" onclick="event.preventDefault(); switchTab('setup')">Setup Wizard<small>Change provider, model, and API keys</small></a>
+      <a href="http://honcho.dappnode:8000/docs" target="_blank">API Docs<small>Honcho OpenAPI documentation</small></a>
+      <a href="https://docs.honcho.dev" target="_blank">Honcho Documentation<small>Full docs by Plastic Labs</small></a>
+    </div>
+
+    <div style="margin-top:1.5rem;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:8px;">
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Endpoint for Hermes</div>
+      <div style="font-family:monospace;font-size:0.95rem;">http://honcho.dappnode:8000</div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SETUP WIZARD ==================== -->
+<div class="tab-content" id="tc-setup">
+  <div class="page">
+    <div class="progress" id="progress"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
+
+    <!-- Step 0: Provider -->
+    <div class="step active" data-step="0">
+      <h2>Choose your AI Provider</h2>
+      <div class="subtitle">Honcho uses an LLM for memory extraction, reasoning, and summarization. Pick a provider — you can change later by re-running this wizard.</div>
+      <div class="cards" id="provider-cards"></div>
+      <div class="actions"><button class="btn btn-primary" id="btn-step0" disabled onclick="goTo(1)">Next</button></div>
+    </div>
+
+    <!-- Step 1: API Key / Model config -->
+    <div class="step" data-step="1">
+      <div id="provider-config"></div>
+      <div class="actions">
+        <button class="btn btn-secondary" onclick="goTo(0)">Back</button>
+        <button class="btn btn-primary" id="btn-step1" onclick="showReview()">Review</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Review & Save -->
+    <div class="step" data-step="2">
+      <h2>Review &amp; Save</h2>
+      <div class="subtitle">These environment variables will be written to Honcho's configuration. The config.toml model references will also be updated.</div>
+      <h3 style="margin-bottom:0.5rem;font-size:1rem;">.env changes</h3>
+      <div class="config-preview" id="env-preview" style="margin-bottom:1rem;"></div>
+      <div class="actions">
+        <button class="btn btn-secondary" onclick="goTo(1)">Back</button>
+        <button class="btn btn-primary" id="btn-save" onclick="saveConfig()">Save Configuration</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Success -->
+    <div class="step" data-step="3">
+      <div class="success-icon">&#10003;</div>
+      <h2 style="text-align:center">Configuration Saved!</h2>
+      <div class="subtitle" style="text-align:center">Restart the Honcho package from the Dappnode admin UI to apply the new configuration.</div>
+      <div class="quick-links">
+        <a href="#" onclick="event.preventDefault(); switchTab('dashboard')">Back to Dashboard<small>Check API status after restart</small></a>
+        <a href="#" onclick="event.preventDefault(); goTo(0);">Run Wizard Again<small>Reconfigure from scratch</small></a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Tab navigation ──
+  document.querySelectorAll(".topnav .tab").forEach(tab => {
+    tab.addEventListener("click", () => switchTab(tab.dataset.tab));
+  });
+  function switchTab(name) {
+    document.querySelectorAll(".topnav .tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
+    document.querySelectorAll(".tab-content").forEach(tc => tc.classList.remove("active"));
+    const el = document.getElementById("tc-" + name);
+    if (el) el.classList.add("active");
+    if (name === "dashboard") refreshDashboard();
+  }
+
+  // ── Dashboard ──
+  let _pollTimer = null;
+  async function refreshDashboard() {
+    try {
+      const resp = await fetch("/api/health");
+      const data = await resp.json();
+      const apiEl = document.getElementById("st-api");
+      const healthEl = document.getElementById("st-health");
+      if (data.apiServer) {
+        apiEl.textContent = "Running"; apiEl.className = "value ok";
+        healthEl.textContent = "Healthy"; healthEl.className = "value ok";
+        ["dot-deriver","dot-dialectic","dot-summary","dot-dream"].forEach(id => {
+          document.getElementById(id).className = "worker-dot active";
+        });
+        if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+      } else {
+        apiEl.textContent = "Starting…"; apiEl.className = "value warn";
+        healthEl.textContent = "—"; healthEl.className = "value";
+        ["dot-deriver","dot-dialectic","dot-summary","dot-dream"].forEach(id => {
+          document.getElementById(id).className = "worker-dot inactive";
+        });
+        if (!_pollTimer) _pollTimer = setInterval(refreshDashboard, 8000);
+      }
+    } catch {
+      document.getElementById("st-api").textContent = "Not reachable";
+      document.getElementById("st-api").className = "value err";
+    }
+    // Read current config to show provider/model
+    try {
+      const resp = await fetch("/api/config");
+      const data = await resp.json();
+      const env = data.env || {};
+      // Determine display provider from base URL
+      const baseUrl = env.LLM_VLLM_BASE_URL || "";
+      let provName = "—";
+      if (baseUrl.includes("nexus")) provName = "DAppNode Nexus";
+      else if (baseUrl.includes("openrouter")) provName = "OpenRouter";
+      else if (baseUrl.includes("api.openai.com")) provName = "OpenAI";
+      else if (baseUrl.includes("anthropic")) provName = "Anthropic";
+      else if (baseUrl.includes("ollama") || baseUrl.includes("11434")) provName = "Ollama (Local)";
+      else if (baseUrl.includes("groq")) provName = "Groq";
+      else if (baseUrl.includes("deepseek")) provName = "DeepSeek";
+      else if (baseUrl) provName = "Custom";
+      document.getElementById("st-provider").textContent = provName;
+      document.getElementById("st-model").textContent = env.LLM_MODEL || "—";
+    } catch {}
+  }
+  refreshDashboard();
+
+  // ── Providers ──
+  const PROVIDERS = [
+    { id: "nexus", name: "DAppNode Nexus", desc: "Private AI — prompts never logged or stored", tag: "Recommended", free: false, baseUrl: "https://nexus-api.dappnode.com/v1" },
+    { id: "openrouter", name: "OpenRouter", desc: "Access 200+ models with one key", tag: "Flexible", free: false, baseUrl: "https://openrouter.ai/api/v1" },
+    { id: "openai", name: "OpenAI", desc: "GPT-4.1, GPT-5, o4-mini", tag: "Popular", free: false, baseUrl: "https://api.openai.com/v1" },
+    { id: "anthropic", name: "Anthropic", desc: "Claude Opus, Sonnet, Haiku", tag: "Strong reasoning", free: false, baseUrl: "https://api.anthropic.com/v1" },
+    { id: "ollama", name: "Ollama (Local)", desc: "Run models on your DAppNode — free & private", tag: "Free", free: true, baseUrl: null },
+    { id: "groq", name: "Groq", desc: "Ultra-fast inference — Llama, Qwen, DeepSeek", tag: "Free tier", free: true, baseUrl: "https://api.groq.com/openai/v1" },
+    { id: "deepseek", name: "DeepSeek", desc: "V3.2, R1 reasoning", tag: "Budget", free: false, baseUrl: "https://api.deepseek.com/v1" },
+    { id: "custom", name: "Custom Endpoint", desc: "Any OpenAI-compatible API", tag: "Advanced", free: false, baseUrl: null },
+  ];
+
+  const SUGGESTED_MODELS = {
+    nexus: ["private/deepseek-v3.2", "minimax/minimax-m2.7"],
+    openai: ["gpt-4.1", "gpt-4.1-mini", "gpt-5.2", "o4-mini"],
+    anthropic: ["claude-sonnet-4-5-20250929", "claude-opus-4-6", "claude-haiku-4-5-20251001"],
+    groq: ["llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct"],
+    deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  };
+
+  let currentStep = 0, selectedProvider = null, openRouterModels = [];
+
+  // ── Render provider cards ──
+  const cardsEl = document.getElementById("provider-cards");
+  PROVIDERS.forEach(p => {
+    const card = document.createElement("div");
+    const featured = p.id === "nexus";
+    card.className = "card" + (featured ? " featured" : "");
+    card.dataset.id = p.id;
+    card.innerHTML = `<div class="card-title">${p.name}</div><div class="card-desc">${p.desc}</div><span class="card-tag ${p.free ? 'free' : ''}">${p.tag}</span>`;
+    card.onclick = () => { cardsEl.querySelectorAll(".card").forEach(c => c.classList.remove("selected")); card.classList.add("selected"); selectedProvider = p; document.getElementById("btn-step0").disabled = false; };
+    cardsEl.appendChild(card);
+  });
+
+  // ── Wizard navigation ──
+  function goTo(step) {
+    currentStep = step;
+    document.querySelectorAll("#tc-setup .step").forEach(s => s.classList.remove("active"));
+    document.querySelector(`#tc-setup .step[data-step="${step}"]`).classList.add("active");
+    document.querySelectorAll(".progress .bar").forEach((bar, i) => { bar.className = "bar"; if (i < step) bar.classList.add("done"); else if (i === step) bar.classList.add("active"); });
+    if (step === 1 && selectedProvider) renderProviderConfig();
+    if (step === 2) { const btn = document.getElementById("btn-save"); btn.disabled = false; btn.textContent = "Save Configuration"; }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // ── Model autocomplete helper ──
+  function createModelInput(containerId, suggestionsArr, placeholder) {
+    const wrap = document.createElement("div"); wrap.className = "model-input-wrap";
+    const input = document.createElement("input"); input.type = "text"; input.id = containerId + "-input";
+    input.placeholder = placeholder || "Type a model ID...";
+    if (suggestionsArr.length) { const first = typeof suggestionsArr[0] === "string" ? suggestionsArr[0] : suggestionsArr[0].id; input.value = first; }
+    const dropdown = document.createElement("div"); dropdown.className = "model-suggestions";
+    function renderItems(filter) {
+      dropdown.innerHTML = "";
+      const q = (filter || "").toLowerCase();
+      const items = q ? suggestionsArr.filter(m => { const id = typeof m === "string" ? m : m.id; return id.toLowerCase().includes(q); }) : suggestionsArr;
+      items.slice(0, 50).forEach(m => {
+        const id = typeof m === "string" ? m : m.id;
+        const ctx = (typeof m === "object" && m.context_length) ? (Math.round(m.context_length / 1000) + "k") : "";
+        const div = document.createElement("div"); div.className = "sg-item";
+        div.innerHTML = `<span class="sg-id">${id}</span>${ctx ? `<span class="sg-ctx">${ctx}</span>` : ""}`;
+        div.addEventListener("mousedown", (e) => { e.preventDefault(); input.value = id; dropdown.classList.remove("open"); });
+        dropdown.appendChild(div);
+      });
+      dropdown.classList.toggle("open", items.length > 0 || !!q);
+    }
+    input.addEventListener("focus", () => renderItems(input.value));
+    input.addEventListener("input", () => renderItems(input.value));
+    input.addEventListener("blur", () => setTimeout(() => dropdown.classList.remove("open"), 150));
+    wrap.appendChild(input); wrap.appendChild(dropdown);
+    return wrap;
+  }
+
+  // ── Provider config (Step 1) ──
+  function renderProviderConfig() {
+    const container = document.getElementById("provider-config");
+    const p = selectedProvider;
+
+    if (p.id === "nexus") {
+      container.innerHTML = `
+        <h2>Configure DAppNode Nexus</h2>
+        <div class="subtitle">Private AI gateway — your prompts are never logged or stored. <a href="https://nexus.dappnode.com" target="_blank" style="color:var(--primary)">Get your API key &rarr;</a></div>
+        <div class="field"><label>Nexus API Key</label><div class="hint">From your Nexus dashboard.</div><input type="password" id="api-key" placeholder="Paste your Nexus API key"></div>
+        <div class="field"><label>Model</label><div class="hint">Browse models at <a href="https://nexus.dappnode.com/models" target="_blank" style="color:var(--primary)">nexus.dappnode.com/models</a></div><div id="model-container"></div></div>`;
+      document.getElementById("model-container").appendChild(createModelInput("std-model", SUGGESTED_MODELS.nexus || [], "e.g. private/deepseek-v3.2"));
+      return;
+    }
+    if (p.id === "ollama") {
+      container.innerHTML = `
+        <h2>Configure Ollama</h2>
+        <div class="subtitle">Run AI models locally on your DAppNode for free.</div>
+        <button class="probe-btn" id="probe-btn" onclick="probeOllama()"><span id="probe-icon">&#128269;</span> Auto-detect Ollama</button>
+        <div id="probe-result"></div>
+        <div class="field"><label>Ollama Server URL</label><div class="hint">Auto-detected or enter manually.</div><input type="text" id="ollama-url" placeholder="http://ollama.dappnode:11434"></div>
+        <div class="field"><label>Model</label><div class="hint">Must support tool/function calling. Recommended: qwen3:8b, mistral:7b</div><div id="model-container"></div></div>`;
+      document.getElementById("model-container").appendChild(createModelInput("ollama-model", [], "qwen3:8b, mistral:7b, ..."));
+      return;
+    }
+    if (p.id === "openrouter") {
+      container.innerHTML = `
+        <h2>Configure OpenRouter</h2>
+        <div class="subtitle">200+ models with one API key. Models fetched live.</div>
+        <div class="field"><label>OpenRouter API Key</label><div class="hint">Get one at openrouter.ai/keys</div><input type="password" id="api-key" placeholder="Paste your API key"></div>
+        <div class="field"><label>Model</label><div class="hint">Type to search or enter any model ID.</div><div id="model-container"><div class="model-suggestions sg-loading" style="display:block;position:static">Loading models...</div></div></div>`;
+      fetchOpenRouterModels();
+      return;
+    }
+    if (p.id === "custom") {
+      container.innerHTML = `
+        <h2>Custom Endpoint</h2>
+        <div class="subtitle">Connect any OpenAI-compatible API.</div>
+        <div class="field"><label>Base URL</label><div class="hint">e.g. https://api.example.com/v1</div><input type="text" id="custom-base-url" placeholder="https://api.example.com/v1"></div>
+        <div class="field"><label>API Key</label><input type="password" id="api-key" placeholder="sk-..."></div>
+        <div class="field"><label>Model</label><input type="text" id="custom-model" placeholder="model-name"></div>`;
+      return;
+    }
+
+    // Standard providers (openai, anthropic, groq, deepseek)
+    const hints = { openai: "platform.openai.com/api-keys", anthropic: "console.anthropic.com", groq: "console.groq.com", deepseek: "platform.deepseek.com" };
+    const suggestions = SUGGESTED_MODELS[p.id] || [];
+    container.innerHTML = `
+      <h2>Configure ${p.name}</h2>
+      <div class="subtitle">${p.desc}.</div>
+      <div class="field"><label>${p.name} API Key</label><div class="hint">Get one at ${hints[p.id] || "the provider's dashboard"}</div><input type="password" id="api-key" placeholder="Paste your API key"></div>
+      <div class="field"><label>Model</label><div class="hint">Select or type any supported model ID.</div><div id="model-container"></div></div>`;
+    document.getElementById("model-container").appendChild(createModelInput("std-model", suggestions, "Type or select a model..."));
+  }
+
+  async function fetchOpenRouterModels() {
+    try { const resp = await fetch("/api/models/openrouter"); const data = await resp.json(); openRouterModels = data.models || []; } catch { openRouterModels = []; }
+    const mc = document.getElementById("model-container"); if (!mc) return; mc.innerHTML = "";
+    const suggestions = openRouterModels.length ? openRouterModels : [{ id: "anthropic/claude-sonnet-4-5" }, { id: "openai/gpt-5.2" }, { id: "google/gemini-2.5-pro" }];
+    mc.appendChild(createModelInput("or-model", suggestions, openRouterModels.length ? `Search ${openRouterModels.length} models...` : "Type a model ID"));
+    const inp = document.getElementById("or-model-input");
+    if (inp && openRouterModels.length) { const cl = openRouterModels.find(m => m.id.includes("claude-sonnet")); inp.value = cl ? cl.id : openRouterModels[0].id; }
+  }
+
+  async function probeOllama() {
+    const btn = document.getElementById("probe-btn"); const icon = document.getElementById("probe-icon"); const resultEl = document.getElementById("probe-result");
+    btn.disabled = true; icon.textContent = "\u23F3"; resultEl.innerHTML = "";
+    try {
+      const resp = await fetch("/api/ollama/probe"); const data = await resp.json();
+      if (data.reachable) {
+        resultEl.innerHTML = `<div class="probe-result ok"><strong>Found Ollama!</strong> at ${data.url}<br>${data.models.length ? "Models: " + data.models.join(", ") : "No models pulled yet."}</div>`;
+        document.getElementById("ollama-url").value = data.url;
+        if (data.models.length) { const mc = document.getElementById("model-container"); mc.innerHTML = ""; mc.appendChild(createModelInput("ollama-model", data.models, "Select a model...")); document.getElementById("ollama-model-input").value = data.models[0]; }
+      } else { resultEl.innerHTML = `<div class="probe-result fail"><strong>No Ollama found.</strong> Make sure an Ollama package is installed.</div>`; }
+    } catch { resultEl.innerHTML = `<div class="probe-result fail">Failed to probe.</div>`; }
+    btn.disabled = false; icon.textContent = "\uD83D\uDD0D";
+  }
+
+  // ── Build env vars for Honcho ──
+  function getModelValue() {
+    for (const id of ["std-model-input", "or-model-input", "ollama-model-input", "custom-model"]) {
+      const el = document.getElementById(id); if (el && el.value.trim()) return el.value.trim();
+    }
+    return null;
+  }
+
+  function buildEnv() {
+    const p = selectedProvider;
+    const env = {};
+    let apiKey = "", baseUrl = "", model = getModelValue() || "";
+
+    if (p.id === "nexus") {
+      apiKey = (document.getElementById("api-key").value || "").trim();
+      baseUrl = p.baseUrl;
+    } else if (p.id === "ollama") {
+      const url = (document.getElementById("ollama-url").value || "").trim() || "http://ollama.dappnode:11434";
+      apiKey = "ollama-local";
+      baseUrl = url + "/v1";
+    } else if (p.id === "custom") {
+      apiKey = (document.getElementById("api-key").value || "").trim();
+      baseUrl = (document.getElementById("custom-base-url").value || "").trim();
+    } else if (p.id === "openrouter") {
+      apiKey = (document.getElementById("api-key").value || "").trim();
+      baseUrl = p.baseUrl;
+    } else {
+      apiKey = (document.getElementById("api-key").value || "").trim();
+      baseUrl = p.baseUrl;
+    }
+
+    // Primary provider (vllm slot)
+    env.LLM_VLLM_API_KEY = apiKey;
+    env.LLM_VLLM_BASE_URL = baseUrl;
+    // Client initialization key
+    env.LLM_OPENAI_API_KEY = apiKey;
+    // Backup provider key (same as primary in single-provider mode)
+    env.LLM_OPENAI_COMPATIBLE_API_KEY = apiKey;
+    // Embedding key (same provider)
+    env.LLM_EMBEDDING_API_KEY = apiKey;
+    // Embedding base URL (must point to an endpoint that supports /v1/embeddings)
+    env.LLM_EMBEDDING_BASE_URL = baseUrl;
+    // Model (used by entrypoint to rewrite config.toml)
+    if (model) env.LLM_MODEL = model;
+
+    return env;
+  }
+
+  function showReview() {
+    const env = buildEnv();
+    const lines = [];
+    for (const [k, v] of Object.entries(env)) {
+      if (k.includes("KEY") || k.includes("TOKEN")) {
+        lines.push(`${k}=${v.slice(0, 8)}${"*".repeat(Math.max(0, v.length - 8))}`);
+      } else { lines.push(`${k}=${v}`); }
+    }
+    document.getElementById("env-preview").textContent = lines.join("\n") || "(no changes)";
+    goTo(2);
+  }
+
+  async function saveConfig() {
+    const btn = document.getElementById("btn-save");
+    btn.disabled = true; btn.textContent = "Saving...";
+    const env = buildEnv();
+    try {
+      const resp = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ env, model: env.LLM_MODEL, baseUrl: env.LLM_VLLM_BASE_URL })
+      });
+      if (resp.ok) { goTo(3); }
+      else { const data = await resp.json(); alert("Failed: " + (data.error || "Unknown error")); btn.disabled = false; btn.textContent = "Save Configuration"; }
+    } catch (err) { alert("Network error: " + err.message); btn.disabled = false; btn.textContent = "Save Configuration"; }
+  }
+</script>
+</body>
+</html>
