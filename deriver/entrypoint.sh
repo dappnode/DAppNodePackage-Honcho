@@ -4,90 +4,251 @@ set -e
 ROLE="${HONCHO_ROLE:-api}"
 CONFIG_DIR="${HONCHO_CONFIG_DIR:-/config}"
 ENV_FILE="${CONFIG_DIR}/.env"
-CONFIG_TOML="${CONFIG_DIR}/config.toml"
 
 echo "=== Honcho Dappnode — ${ROLE} ==="
 
-# ── 1. Seed config.toml into shared volume if not present ─────
-# On first boot, copy the baked-in honcho-self-hosted config.toml
-# to the shared volume so the setup wizard can read/write it.
-if [ ! -f "${CONFIG_TOML}" ]; then
-  mkdir -p "${CONFIG_DIR}"
-  if [ -f /app/config.toml ]; then
-    cp /app/config.toml "${CONFIG_TOML}"
-    echo "[Config] Seeded config.toml to shared volume"
-  fi
-fi
-
-# ── 2. Load env vars from shared .env file ────────────────────
-# The setup wizard writes LLM_VLLM_API_KEY, LLM_VLLM_BASE_URL,
-# LLM_MODEL, etc. to this file. Export them into the process
-# environment so Honcho reads them at import time.
+# ── 1. Load env vars from shared .env (written by setup wizard) ───
 if [ -f "${ENV_FILE}" ]; then
-  echo "[Config] Loading env vars from ${ENV_FILE}"
+  echo "[Config] Loading ${ENV_FILE}"
   while IFS= read -r line; do
-    # Skip comments and empty lines
-    case "$line" in
-      \#*|"") continue ;;
-    esac
-    # Export each KEY=VALUE pair
+    case "$line" in \#*|"") continue ;; esac
     key=$(echo "$line" | cut -d= -f1)
     val=$(echo "$line" | cut -d= -f2-)
     export "$key"="$val"
   done < "${ENV_FILE}"
 fi
 
-# ── 3. Rewrite config.toml for single-provider Dappnode mode ──
-# The honcho-self-hosted config.toml has hardcoded model names for
-# OpenRouter/xAI/Venice. Replace ALL model references + backup
-# provider to use the single provider from the setup wizard.
-if [ -f "${CONFIG_TOML}" ]; then
-  MODEL="${LLM_MODEL:-}"
-  BASE_URL="${LLM_VLLM_BASE_URL:-}"
+# ── 2. Resolve provider settings ─────────────────────────────────
+# The setup wizard writes:
+#   LLM_VLLM_API_KEY, LLM_VLLM_BASE_URL, LLM_MODEL,
+#   LLM_OPENAI_API_KEY, LLM_EMBEDDING_API_KEY
+#
+# Upstream Honcho uses config.toml model_config sections with:
+#   transport = "openai" | "anthropic" | "gemini"
+#   model = "model-name"
+#   [overrides] base_url = "..."
+#
+# Strategy: route ALL workers through "openai" transport (the OpenAI
+# SDK client, which works with any OpenAI-compatible endpoint) and
+# set base_url override for non-OpenAI providers.
 
-  if [ -n "${MODEL}" ]; then
-    sed -i "s|^MODEL = \".*\"|MODEL = \"${MODEL}\"|g" "${CONFIG_TOML}"
-    sed -i "s|^BACKUP_MODEL = \".*\"|BACKUP_MODEL = \"${MODEL}\"|g" "${CONFIG_TOML}"
-    sed -i "s|^DEDUCTION_MODEL = \".*\"|DEDUCTION_MODEL = \"${MODEL}\"|g" "${CONFIG_TOML}"
-    sed -i "s|^INDUCTION_MODEL = \".*\"|INDUCTION_MODEL = \"${MODEL}\"|g" "${CONFIG_TOML}"
-    echo "[Config] All model references set to: ${MODEL}"
-  fi
+API_KEY="${LLM_VLLM_API_KEY:-${LLM_OPENAI_API_KEY:-}}"
+BASE_URL="${LLM_VLLM_BASE_URL:-}"
+MODEL="${LLM_MODEL:-gpt-5.4-mini}"
+EMBED_KEY="${LLM_EMBEDDING_API_KEY:-${API_KEY}}"
+EMBED_BASE_URL="${LLM_EMBEDDING_BASE_URL:-${BASE_URL}}"
 
-  # Single provider mode: backup = same as primary
-  sed -i "s|^BACKUP_PROVIDER = \".*\"|BACKUP_PROVIDER = \"vllm\"|g" "${CONFIG_TOML}"
+# Export the key upstream Honcho reads for the OpenAI client
+export LLM_OPENAI_API_KEY="${API_KEY}"
 
-  if [ -n "${BASE_URL}" ]; then
-    sed -i "s|^OPENAI_COMPATIBLE_BASE_URL = \".*\"|OPENAI_COMPATIBLE_BASE_URL = \"${BASE_URL}\"|g" "${CONFIG_TOML}"
-  fi
+echo "[LLM] Model: ${MODEL}"
+echo "[LLM] Base URL: ${BASE_URL:-OpenAI default}"
+echo "[LLM] Embeddings: ${EMBED_BASE_URL:-OpenAI default}"
 
-  # Copy rewritten config.toml into /app where Honcho reads it
-  cp "${CONFIG_TOML}" /app/config.toml
-
-  echo "[Config] config.toml applied to /app/config.toml"
-fi
-
-# ── 3b. Set placeholder values if no provider configured yet ──
-# On first boot before the wizard runs, LLM vars are empty.
-# Set placeholders so clients.py can initialize without crashing.
-# Actual LLM calls will fail, but the API server will start.
-if [ -z "${LLM_VLLM_API_KEY}" ]; then
-  echo "[Config] WARNING: No LLM provider configured yet."
-  echo "[Config] Run the Setup Wizard at http://setup-wizard.honcho.dappnode:8080"
-  export LLM_VLLM_API_KEY="not-configured"
-  export LLM_VLLM_BASE_URL="https://localhost:9999"
+# ── 3. Placeholder for first boot (no wizard config yet) ─────────
+if [ -z "${API_KEY}" ]; then
+  echo "[Config] WARNING: No LLM provider configured."
+  echo "[Config] Open http://setup-wizard.honcho.dappnode:8080 to configure."
   export LLM_OPENAI_API_KEY="not-configured"
-  export LLM_OPENAI_COMPATIBLE_API_KEY="not-configured"
-  export LLM_EMBEDDING_API_KEY="not-configured"
+  API_KEY="not-configured"
+  BASE_URL="https://localhost:9999"
+  EMBED_KEY="not-configured"
+  EMBED_BASE_URL="https://localhost:9999"
 fi
 
-# ── 4. Ensure all Honcho env vars are exported ────────────────
-# Even if the .env file was loaded above, make sure critical vars
-# are set (they may come from docker-compose env or the wizard)
-export AUTH_USE_AUTH=false
-echo "[LLM] Base URL: ${LLM_VLLM_BASE_URL:-not set}"
-echo "[LLM] Model: ${LLM_MODEL:-not set}"
+# ── 4. Generate config.toml ──────────────────────────────────────
+# Build the overrides block only if a custom base_url is set
+if [ -n "${BASE_URL}" ]; then
+  OVERRIDE_BLOCK="
+[deriver.model_config.overrides]
+base_url = \"${BASE_URL}\"
 
-# ── 5. Role-based startup ─────────────────────────────────────
+[dialectic.levels.minimal.model_config.overrides]
+base_url = \"${BASE_URL}\"
+
+[dialectic.levels.low.model_config.overrides]
+base_url = \"${BASE_URL}\"
+
+[dialectic.levels.medium.model_config.overrides]
+base_url = \"${BASE_URL}\"
+
+[dialectic.levels.high.model_config.overrides]
+base_url = \"${BASE_URL}\"
+
+[dialectic.levels.max.model_config.overrides]
+base_url = \"${BASE_URL}\"
+
+[summary.model_config.overrides]
+base_url = \"${BASE_URL}\"
+
+[dream.deduction_model_config.overrides]
+base_url = \"${BASE_URL}\"
+
+[dream.induction_model_config.overrides]
+base_url = \"${BASE_URL}\""
+else
+  OVERRIDE_BLOCK=""
+fi
+
+if [ -n "${EMBED_BASE_URL}" ]; then
+  EMBED_OVERRIDE="
+[embedding.model_config.overrides]
+base_url = \"${EMBED_BASE_URL}\""
+else
+  EMBED_OVERRIDE=""
+fi
+
+cat > /app/config.toml << TOMLEOF
+# Auto-generated by Dappnode entrypoint — $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+# Single-provider mode: all workers use the same LLM endpoint.
+
+[app]
+LOG_LEVEL = "INFO"
+SESSION_OBSERVERS_LIMIT = 10
+GET_CONTEXT_MAX_TOKENS = 100000
+MAX_FILE_SIZE = 5242880
+MAX_MESSAGE_SIZE = 25000
+EMBED_MESSAGES = true
+NAMESPACE = "honcho"
+
+[db]
+CONNECTION_URI = "${DB_CONNECTION_URI}"
+SCHEMA = "public"
+POOL_SIZE = 10
+MAX_OVERFLOW = 20
+POOL_TIMEOUT = 30
+POOL_RECYCLE = 300
+
+[auth]
+USE_AUTH = false
+
+[sentry]
+ENABLED = false
+
+[llm]
+DEFAULT_MAX_TOKENS = 2500
+OPENAI_API_KEY = "${API_KEY}"
+
+[embedding]
+VECTOR_DIMENSIONS = 1536
+MAX_INPUT_TOKENS = 8192
+
+[embedding.model_config]
+transport = "openai"
+model = "text-embedding-3-small"
+${EMBED_OVERRIDE}
+
+[deriver]
+ENABLED = true
+WORKERS = 1
+POLLING_SLEEP_INTERVAL_SECONDS = 1.0
+STALE_SESSION_TIMEOUT_MINUTES = 5
+DEDUPLICATE = true
+MAX_INPUT_TOKENS = 25000
+WORKING_REPRESENTATION_MAX_OBSERVATIONS = 100
+REPRESENTATION_BATCH_MAX_TOKENS = 1024
+FLUSH_ENABLED = false
+
+[deriver.model_config]
+transport = "openai"
+model = "${MODEL}"
+
+[peer_card]
+ENABLED = true
+
+[dialectic]
+MAX_OUTPUT_TOKENS = 8192
+MAX_INPUT_TOKENS = 100000
+HISTORY_TOKEN_LIMIT = 8192
+SESSION_HISTORY_MAX_TOKENS = 4096
+
+[dialectic.levels.minimal]
+MAX_TOOL_ITERATIONS = 1
+MAX_OUTPUT_TOKENS = 250
+
+[dialectic.levels.minimal.model_config]
+transport = "openai"
+model = "${MODEL}"
+
+[dialectic.levels.low]
+MAX_TOOL_ITERATIONS = 5
+
+[dialectic.levels.low.model_config]
+transport = "openai"
+model = "${MODEL}"
+
+[dialectic.levels.medium]
+MAX_TOOL_ITERATIONS = 2
+
+[dialectic.levels.medium.model_config]
+transport = "openai"
+model = "${MODEL}"
+
+[dialectic.levels.high]
+MAX_TOOL_ITERATIONS = 4
+
+[dialectic.levels.high.model_config]
+transport = "openai"
+model = "${MODEL}"
+
+[dialectic.levels.max]
+MAX_TOOL_ITERATIONS = 10
+
+[dialectic.levels.max.model_config]
+transport = "openai"
+model = "${MODEL}"
+
+[summary]
+ENABLED = true
+MESSAGES_PER_SHORT_SUMMARY = 20
+MESSAGES_PER_LONG_SUMMARY = 60
+MAX_TOKENS_SHORT = 1000
+MAX_TOKENS_LONG = 4000
+
+[summary.model_config]
+transport = "openai"
+model = "${MODEL}"
+
+[dream]
+ENABLED = true
+DOCUMENT_THRESHOLD = 50
+IDLE_TIMEOUT_MINUTES = 60
+MIN_HOURS_BETWEEN_DREAMS = 8
+ENABLED_TYPES = ["omni"]
+MAX_TOOL_ITERATIONS = 20
+HISTORY_TOKEN_LIMIT = 16384
+
+[dream.deduction_model_config]
+transport = "openai"
+model = "${MODEL}"
+
+[dream.induction_model_config]
+transport = "openai"
+model = "${MODEL}"
+
+[cache]
+ENABLED = true
+URL = "${CACHE_URL}"
+DEFAULT_TTL_SECONDS = 300
+
+[vector_store]
+TYPE = "pgvector"
+NAMESPACE = "honcho"
+
+[metrics]
+ENABLED = false
+
+[telemetry]
+ENABLED = false
+
+[webhook]
+SECRET = ""
+${OVERRIDE_BLOCK}
+TOMLEOF
+
+echo "[Config] Generated /app/config.toml"
+
+# ── 5. Role-based startup ────────────────────────────────────────
 if [ "${ROLE}" = "api" ]; then
 
   echo "[DB] Waiting for PostgreSQL ..."
@@ -96,7 +257,6 @@ if [ "${ROLE}" = "api" ]; then
   done
   echo "[DB] PostgreSQL is ready."
 
-  # On-demand backup dump for Dappnode backup button
   pg_dump -h database -U honcho -d honcho --clean --if-exists \
     -f /backup/honcho.sql 2>/dev/null || \
     echo "[Backup] No existing data to dump (first boot)."
