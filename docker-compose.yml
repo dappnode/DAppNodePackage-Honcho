@@ -5,7 +5,7 @@ services:
     build:
       context: api
       args:
-        UPSTREAM_VERSION: v3.0.3
+        UPSTREAM_VERSION: v3.0.6
     image: "api.honcho.dnp.dappnode.eth:0.1.0"
     restart: unless-stopped
     ports:
@@ -27,7 +27,7 @@ services:
     build:
       context: deriver
       args:
-        UPSTREAM_VERSION: v3.0.3
+        UPSTREAM_VERSION: v3.0.6
     image: "deriver.honcho.dnp.dappnode.eth:0.1.0"
     restart: unless-stopped
     environment:
