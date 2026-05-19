@@ -35,7 +35,7 @@
   },
   "links": {
     "homepage": "https://honcho.dev",
-    "ui": "http://setup-wizard.honcho.dappnode:8080",
+    "Setup-Wizard": "http://setup-wizard.honcho.dappnode:8080",
     "api": "http://honcho.dappnode:8000"
   },
   "repository": {
@@ -47,6 +47,6 @@
   },
   "categories": ["Developer tools"],
   "keywords": ["AI", "memory", "agent", "LLM", "Hermes", "Honcho"],
-  "author": "Dappnode Association <admin@dappnode.io> (https://github.com/dappnode)",
+  "author": Chuy García <chuy@dappnode.io> (https://github.com/dappnode)",
   "license": "GPL-3.0"
 }
