@@ -1,7 +1,7 @@
 {
   "name": "honcho.dnp.dappnode.eth",
   "version": "0.1.0",
-  "upstreamVersion": "v3.0.3",
+  "upstreamVersion": "v3.0.6",
   "upstreamRepo": "plastic-labs/honcho",
   "upstreamArg": "UPSTREAM_VERSION",
   "shortDescription": "Self-sovereign AI memory layer for Hermes and OpenClaw agents.",
