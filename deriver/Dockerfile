@@ -1,29 +1,41 @@
 ARG UPSTREAM_VERSION
 
-FROM python:3.12-slim
+FROM python:3.13-slim-bookworm AS source
 
-ARG UPSTREAM_VERSION
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git build-essential postgresql-client libpq5 \
+RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
-# Clone upstream Honcho at pinned tag (fall back to main)
+ARG UPSTREAM_VERSION
+WORKDIR /src
 RUN git clone --depth 1 --branch ${UPSTREAM_VERSION} \
     https://github.com/plastic-labs/honcho.git . \
     || git clone --depth 1 https://github.com/plastic-labs/honcho.git .
 
-# Install dependencies
-ENV UV_LINK_MODE=copy
-RUN uv sync --frozen --no-dev 2>/dev/null || uv sync --no-dev
+# ── Build ──────────────────────────────────────────────────────
+FROM python:3.13-slim-bookworm
 
-# Activate venv via PATH
+COPY --from=ghcr.io/astral-sh/uv:0.9.24 /uv /bin/uv
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Copy source from clone
+COPY --from=source /src/uv.lock /src/pyproject.toml /app/
+RUN uv sync --frozen --no-install-project --no-group dev
+
+COPY --from=source /src /app/
+RUN uv sync --frozen --no-group dev
+
 ENV PATH="/app/.venv/bin:$PATH"
-ENV VIRTUAL_ENV="/app/.venv"
+ENV HOME=/app
 
 RUN mkdir -p /backup /config
 

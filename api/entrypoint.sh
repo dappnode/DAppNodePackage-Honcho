@@ -10,245 +10,98 @@ echo "=== Honcho Dappnode — ${ROLE} ==="
 # ── 1. Load env vars from shared .env (written by setup wizard) ───
 if [ -f "${ENV_FILE}" ]; then
   echo "[Config] Loading ${ENV_FILE}"
-  while IFS= read -r line; do
-    case "$line" in \#*|"") continue ;; esac
-    key=$(echo "$line" | cut -d= -f1)
-    val=$(echo "$line" | cut -d= -f2-)
-    export "$key"="$val"
-  done < "${ENV_FILE}"
+  set -a
+  . "${ENV_FILE}"
+  set +a
 fi
 
 # ── 2. Resolve provider settings ─────────────────────────────────
-# The setup wizard writes:
-#   LLM_VLLM_API_KEY, LLM_VLLM_BASE_URL, LLM_MODEL,
-#   LLM_OPENAI_API_KEY, LLM_EMBEDDING_API_KEY
+# The setup wizard writes: LLM_VLLM_API_KEY, LLM_VLLM_BASE_URL, LLM_MODEL
 #
-# Upstream Honcho uses config.toml model_config sections with:
-#   transport = "openai" | "anthropic" | "gemini"
-#   model = "model-name"
-#   [overrides] base_url = "..."
-#
-# Strategy: route ALL workers through "openai" transport (the OpenAI
-# SDK client, which works with any OpenAI-compatible endpoint) and
-# set base_url override for non-OpenAI providers.
+# Upstream v3.0.6 uses per-component env vars with SupportedProviders:
+#   "custom" provider → reads LLM_OPENAI_COMPATIBLE_BASE_URL + LLM_OPENAI_COMPATIBLE_API_KEY
+#   Each worker needs: DERIVER_PROVIDER, DERIVER_MODEL, etc.
+#   Dialectic needs: DIALECTIC_LEVELS__minimal__PROVIDER, DIALECTIC_LEVELS__minimal__MODEL, etc.
 
-API_KEY="${LLM_VLLM_API_KEY:-${LLM_OPENAI_API_KEY:-}}"
-BASE_URL="${LLM_VLLM_BASE_URL:-}"
-MODEL="${LLM_MODEL:-gpt-5.4-mini}"
-EMBED_KEY="${LLM_EMBEDDING_API_KEY:-${API_KEY}}"
-EMBED_BASE_URL="${LLM_EMBEDDING_BASE_URL:-${BASE_URL}}"
+API_KEY="${LLM_VLLM_API_KEY:-${LLM_OPENAI_COMPATIBLE_API_KEY:-}}"
+BASE_URL="${LLM_VLLM_BASE_URL:-${LLM_OPENAI_COMPATIBLE_BASE_URL:-}}"
+MODEL="${LLM_MODEL:-}"
 
-# Export the key upstream Honcho reads for the OpenAI client
-export LLM_OPENAI_API_KEY="${API_KEY}"
-
-echo "[LLM] Model: ${MODEL}"
-echo "[LLM] Base URL: ${BASE_URL:-OpenAI default}"
-echo "[LLM] Embeddings: ${EMBED_BASE_URL:-OpenAI default}"
+echo "[LLM] Base URL: ${BASE_URL:-not set}"
+echo "[LLM] Model: ${MODEL:-not set}"
 
 # ── 3. Placeholder for first boot (no wizard config yet) ─────────
 if [ -z "${API_KEY}" ]; then
   echo "[Config] WARNING: No LLM provider configured."
   echo "[Config] Open http://setup-wizard.honcho.dappnode:8080 to configure."
-  export LLM_OPENAI_API_KEY="not-configured"
   API_KEY="not-configured"
   BASE_URL="https://localhost:9999"
-  EMBED_KEY="not-configured"
-  EMBED_BASE_URL="https://localhost:9999"
+  MODEL="placeholder"
 fi
 
-# ── 4. Generate config.toml ──────────────────────────────────────
-# Build the overrides block only if a custom base_url is set
-if [ -n "${BASE_URL}" ]; then
-  OVERRIDE_BLOCK="
-[deriver.model_config.overrides]
-base_url = \"${BASE_URL}\"
+# ── 4. Export upstream Honcho env vars ────────────────────────────
+# These are the exact var names from .env.template v3.0.6
 
-[dialectic.levels.minimal.model_config.overrides]
-base_url = \"${BASE_URL}\"
+# Custom provider endpoint (any OpenAI-compatible API)
+export LLM_OPENAI_COMPATIBLE_BASE_URL="${BASE_URL}"
+export LLM_OPENAI_COMPATIBLE_API_KEY="${API_KEY}"
 
-[dialectic.levels.low.model_config.overrides]
-base_url = \"${BASE_URL}\"
+# Embedding provider — route through same endpoint via "openrouter"
+# (openrouter is a valid Literal for EMBEDDING_PROVIDER and uses
+# the openai-compatible path internally)
+export LLM_EMBEDDING_PROVIDER="openrouter"
 
-[dialectic.levels.medium.model_config.overrides]
-base_url = \"${BASE_URL}\"
+# Also set the direct provider keys so clients.py can init
+export LLM_OPENAI_API_KEY="${API_KEY}"
 
-[dialectic.levels.high.model_config.overrides]
-base_url = \"${BASE_URL}\"
+# Auth disabled — internal Dappnode network only
+export AUTH_USE_AUTH=false
 
-[dialectic.levels.max.model_config.overrides]
-base_url = \"${BASE_URL}\"
+# ── 5. Set per-worker provider + model via env vars ───────────────
+# Deriver
+export DERIVER_PROVIDER="custom"
+export DERIVER_MODEL="${MODEL}"
 
-[summary.model_config.overrides]
-base_url = \"${BASE_URL}\"
+# Summary
+export SUMMARY_PROVIDER="custom"
+export SUMMARY_MODEL="${MODEL}"
 
-[dream.deduction_model_config.overrides]
-base_url = \"${BASE_URL}\"
+# Dream
+export DREAM_PROVIDER="custom"
+export DREAM_MODEL="${MODEL}"
+export DREAM_DEDUCTION_MODEL="${MODEL}"
+export DREAM_INDUCTION_MODEL="${MODEL}"
 
-[dream.induction_model_config.overrides]
-base_url = \"${BASE_URL}\""
-else
-  OVERRIDE_BLOCK=""
-fi
+# Dialectic — all 5 levels, each needs PROVIDER + MODEL + THINKING_BUDGET_TOKENS
+export DIALECTIC_LEVELS__minimal__PROVIDER="custom"
+export DIALECTIC_LEVELS__minimal__MODEL="${MODEL}"
+export DIALECTIC_LEVELS__minimal__THINKING_BUDGET_TOKENS=0
+export DIALECTIC_LEVELS__minimal__MAX_TOOL_ITERATIONS=1
+export DIALECTIC_LEVELS__minimal__MAX_OUTPUT_TOKENS=250
 
-if [ -n "${EMBED_BASE_URL}" ]; then
-  EMBED_OVERRIDE="
-[embedding.model_config.overrides]
-base_url = \"${EMBED_BASE_URL}\""
-else
-  EMBED_OVERRIDE=""
-fi
+export DIALECTIC_LEVELS__low__PROVIDER="custom"
+export DIALECTIC_LEVELS__low__MODEL="${MODEL}"
+export DIALECTIC_LEVELS__low__THINKING_BUDGET_TOKENS=0
+export DIALECTIC_LEVELS__low__MAX_TOOL_ITERATIONS=5
 
-cat > /app/config.toml << TOMLEOF
-# Auto-generated by Dappnode entrypoint — $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-# Single-provider mode: all workers use the same LLM endpoint.
+export DIALECTIC_LEVELS__medium__PROVIDER="custom"
+export DIALECTIC_LEVELS__medium__MODEL="${MODEL}"
+export DIALECTIC_LEVELS__medium__THINKING_BUDGET_TOKENS=0
+export DIALECTIC_LEVELS__medium__MAX_TOOL_ITERATIONS=2
 
-[app]
-LOG_LEVEL = "INFO"
-SESSION_OBSERVERS_LIMIT = 10
-GET_CONTEXT_MAX_TOKENS = 100000
-MAX_FILE_SIZE = 5242880
-MAX_MESSAGE_SIZE = 25000
-EMBED_MESSAGES = true
-NAMESPACE = "honcho"
+export DIALECTIC_LEVELS__high__PROVIDER="custom"
+export DIALECTIC_LEVELS__high__MODEL="${MODEL}"
+export DIALECTIC_LEVELS__high__THINKING_BUDGET_TOKENS=0
+export DIALECTIC_LEVELS__high__MAX_TOOL_ITERATIONS=4
 
-[db]
-CONNECTION_URI = "${DB_CONNECTION_URI}"
-SCHEMA = "public"
-POOL_SIZE = 10
-MAX_OVERFLOW = 20
-POOL_TIMEOUT = 30
-POOL_RECYCLE = 300
+export DIALECTIC_LEVELS__max__PROVIDER="custom"
+export DIALECTIC_LEVELS__max__MODEL="${MODEL}"
+export DIALECTIC_LEVELS__max__THINKING_BUDGET_TOKENS=0
+export DIALECTIC_LEVELS__max__MAX_TOOL_ITERATIONS=10
 
-[auth]
-USE_AUTH = false
+echo "[Config] All workers set to: custom / ${MODEL}"
 
-[sentry]
-ENABLED = false
-
-[llm]
-DEFAULT_MAX_TOKENS = 2500
-OPENAI_API_KEY = "${API_KEY}"
-
-[embedding]
-VECTOR_DIMENSIONS = 1536
-MAX_INPUT_TOKENS = 8192
-
-[embedding.model_config]
-transport = "openai"
-model = "text-embedding-3-small"
-${EMBED_OVERRIDE}
-
-[deriver]
-ENABLED = true
-WORKERS = 1
-POLLING_SLEEP_INTERVAL_SECONDS = 1.0
-STALE_SESSION_TIMEOUT_MINUTES = 5
-DEDUPLICATE = true
-MAX_INPUT_TOKENS = 23000
-WORKING_REPRESENTATION_MAX_OBSERVATIONS = 100
-REPRESENTATION_BATCH_MAX_TOKENS = 1024
-FLUSH_ENABLED = false
-
-[deriver.model_config]
-transport = "openai"
-model = "${MODEL}"
-
-[peer_card]
-ENABLED = true
-
-[dialectic]
-MAX_OUTPUT_TOKENS = 8192
-MAX_INPUT_TOKENS = 100000
-HISTORY_TOKEN_LIMIT = 8192
-SESSION_HISTORY_MAX_TOKENS = 4096
-
-[dialectic.levels.minimal]
-MAX_TOOL_ITERATIONS = 1
-MAX_OUTPUT_TOKENS = 250
-
-[dialectic.levels.minimal.model_config]
-transport = "openai"
-model = "${MODEL}"
-
-[dialectic.levels.low]
-MAX_TOOL_ITERATIONS = 5
-
-[dialectic.levels.low.model_config]
-transport = "openai"
-model = "${MODEL}"
-
-[dialectic.levels.medium]
-MAX_TOOL_ITERATIONS = 2
-
-[dialectic.levels.medium.model_config]
-transport = "openai"
-model = "${MODEL}"
-
-[dialectic.levels.high]
-MAX_TOOL_ITERATIONS = 4
-
-[dialectic.levels.high.model_config]
-transport = "openai"
-model = "${MODEL}"
-
-[dialectic.levels.max]
-MAX_TOOL_ITERATIONS = 10
-
-[dialectic.levels.max.model_config]
-transport = "openai"
-model = "${MODEL}"
-
-[summary]
-ENABLED = true
-MESSAGES_PER_SHORT_SUMMARY = 20
-MESSAGES_PER_LONG_SUMMARY = 60
-MAX_TOKENS_SHORT = 1000
-MAX_TOKENS_LONG = 4000
-
-[summary.model_config]
-transport = "openai"
-model = "${MODEL}"
-
-[dream]
-ENABLED = true
-DOCUMENT_THRESHOLD = 50
-IDLE_TIMEOUT_MINUTES = 60
-MIN_HOURS_BETWEEN_DREAMS = 8
-ENABLED_TYPES = ["omni"]
-MAX_TOOL_ITERATIONS = 20
-HISTORY_TOKEN_LIMIT = 16384
-
-[dream.deduction_model_config]
-transport = "openai"
-model = "${MODEL}"
-
-[dream.induction_model_config]
-transport = "openai"
-model = "${MODEL}"
-
-[cache]
-ENABLED = true
-URL = "${CACHE_URL}"
-DEFAULT_TTL_SECONDS = 300
-
-[vector_store]
-TYPE = "pgvector"
-NAMESPACE = "honcho"
-
-[metrics]
-ENABLED = false
-
-[telemetry]
-ENABLED = false
-
-[webhook]
-SECRET = ""
-${OVERRIDE_BLOCK}
-TOMLEOF
-
-echo "[Config] Generated /app/config.toml"
-
-# ── 5. Role-based startup ────────────────────────────────────────
+# ── 6. Role-based startup ────────────────────────────────────────
 if [ "${ROLE}" = "api" ]; then
 
   echo "[DB] Waiting for PostgreSQL ..."
@@ -257,21 +110,20 @@ if [ "${ROLE}" = "api" ]; then
   done
   echo "[DB] PostgreSQL is ready."
 
+  # Backup dump for Dappnode backup button
   pg_dump -h database -U honcho -d honcho --clean --if-exists \
     -f /backup/honcho.sql 2>/dev/null || \
     echo "[Backup] No existing data to dump (first boot)."
 
+  # Run migrations via upstream's provision script
   echo "[Migrations] Running ..."
   cd /app
-  python -m alembic upgrade head 2>&1 || \
-    echo "[Migrations] Alembic failed — may already be up to date."
+  python scripts/provision_db.py 2>&1 || \
+    echo "[Migrations] provision_db.py failed — may already be up to date."
   echo "[Migrations] Done."
 
   echo "[Server] Starting Honcho API on :8000 ..."
-  exec uvicorn src.main:app \
-    --host 0.0.0.0 \
-    --port 8000 \
-    --workers 1
+  exec fastapi run --host 0.0.0.0 src/main.py
 
 elif [ "${ROLE}" = "deriver" ]; then
 
