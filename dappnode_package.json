@@ -29,7 +29,7 @@
   ],
   "changelog": "Initial release. Packages Honcho v3 using honcho-self-hosted config overlay with Dappnode Setup Wizard UI.",
   "warnings": {
-    "onInstall": "Complete the Setup Wizard to select your AI provider. If you choose Local Ollama, the Ollama Dappnode package must already be installed with at least one tool-calling model downloaded (e.g. qwen3:8b).",
+    "onInstall": "Choose a Honcho wizard password in the Dappnode installation form, then use it to unlock the Setup Wizard. On upgrade, set HONCHO_WIZARD_PASSWORD for setup-wizard in the package Config and restart that service. If you choose Local Ollama, install the Ollama Dappnode package and download a tool-calling model first (e.g. qwen3:8b).",
     "onReset": "Resetting this package stops all services but does NOT delete your memory database. To erase all stored memories, remove the honcho-db-data volume from the Dappnode volume manager.",
     "onRemove": "Removing this package will stop all Honcho services. Your memory database volume will be preserved unless you explicitly remove it."
   },
@@ -47,6 +47,6 @@
   },
   "categories": ["Developer tools"],
   "keywords": ["AI", "memory", "agent", "LLM", "Hermes", "Honcho"],
-  "author": Chuy García <chuy@dappnode.io> (https://github.com/dappnode)",
+  "author": "Chuy García <chuy@dappnode.io> (https://github.com/dappnode)",
   "license": "GPL-3.0"
 }

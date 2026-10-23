@@ -46,8 +46,7 @@ services:
     restart: unless-stopped
     environment:
       HONCHO_CONFIG_DIR: "/config"
-    ports:
-      - "8080:8080"
+      HONCHO_WIZARD_PASSWORD: ""
     volumes:
       - honcho-config:/config
 

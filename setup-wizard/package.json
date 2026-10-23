@@ -1,0 +1,8 @@
+{
+  "name": "honcho-setup-wizard",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": { "test": "node --test *.test.cjs" },
+  "engines": { "node": ">=22.23.4" },
+  "devDependencies": { "jsdom": "27.0.1" }
+}
