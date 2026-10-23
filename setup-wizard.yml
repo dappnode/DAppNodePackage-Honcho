@@ -1,16 +1,18 @@
 version: "2"
 fields:
-  - id: setupNotice
+  - id: wizardPassword
     target:
       type: environment
-      name: _SETUP_NOTICE
-      service: api
-    title: Setup Instructions
+      name: HONCHO_WIZARD_PASSWORD
+      service: setup-wizard
+    title: Honcho wizard password
     description: >-
-      After installation, open the **Setup Wizard UI** at
-      http://setup-wizard.honcho.dappnode:8080 to configure your
-      AI provider, API key, and model. The Setup Wizard will write
-      all necessary environment variables for Honcho.
-    enum:
-      - "I understand"
+      Choose a separate password for the Honcho Setup Wizard. After installation,
+      open http://setup-wizard.honcho.dappnode:8080 and unlock it with this password
+      to configure your AI provider, API key, and model. You can change this
+      password later in Honcho's Config tab; restart the setup-wizard service
+      afterward. Use a password manager to generate and save a strong password.
+    secret: true
     required: true
+    pattern: '^[\x20-\x7E]{12,128}(?![\s\S])'
+    patternErrorMessage: "Use 12 to 128 printable ASCII characters."

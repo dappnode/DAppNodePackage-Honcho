@@ -105,8 +105,19 @@
 </head>
 <body>
 
+<div class="page" id="login-panel">
+  <h2>Unlock Honcho Setup</h2>
+  <p class="subtitle" style="margin:1rem 0">Use the wizard password you chose in Dappnode. To change it, update Honcho's Config and restart the setup-wizard service. Connect through your Dappnode VPN or trusted HTTPS.</p>
+  <form id="login-form">
+    <div class="field"><label for="wizard-password">Wizard password</label><input type="password" id="wizard-password" autocomplete="current-password" spellcheck="false" required maxlength="128"></div>
+    <button class="btn btn-primary" type="submit">Unlock</button>
+    <p id="login-error" role="alert" style="color:var(--error);margin-top:1rem"></p>
+  </form>
+</div>
+<div id="wizard-app" hidden>
 <nav class="topnav">
   <div class="logo">&#9679; Honcho Memory</div>
+  <button class="btn btn-secondary" id="logout-button" type="button">Lock</button>
   <div class="tabs">
     <div class="tab active" data-tab="dashboard">Dashboard</div>
     <div class="tab" data-tab="setup">Setup</div>
@@ -193,7 +204,52 @@
   </div>
 </div>
 
+</div>
 <script>
+  // Session tokens live only in this tab's memory: never URLs, cookies or web storage.
+  let sessionToken = "";
+  let savedConfig = { env: {}, configuredSecrets: {} };
+  const SECRET_KEYS = ["LLM_VLLM_API_KEY", "LLM_OPENAI_API_KEY", "LLM_OPENAI_COMPATIBLE_API_KEY", "LLM_EMBEDDING_API_KEY"];
+  function lockWizard() {
+    sessionToken = "";
+    if (_pollTimer) clearInterval(_pollTimer);
+    _pollTimer = null;
+    document.getElementById("wizard-app").hidden = true;
+    document.getElementById("login-panel").hidden = false;
+    document.querySelectorAll('input[type="password"]').forEach(input => { input.value = ""; });
+    document.getElementById("env-preview").textContent = "";
+    savedConfig = { env: {}, configuredSecrets: {} };
+  }
+  async function apiFetch(url, options = {}) {
+    if (!sessionToken) throw new Error("Unlock the wizard first.");
+    const response = await fetch(url, { ...options, cache: "no-store", credentials: "omit", headers: { ...options.headers, Authorization: "Bearer " + sessionToken } });
+    if (response.status === 401) { lockWizard(); throw new Error("Wizard session expired or rejected. Unlock again."); }
+    if (!response.ok) { const data = await response.json(); throw new Error(data.error || "Request failed."); }
+    return response;
+  }
+  document.getElementById("login-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    const input = document.getElementById("wizard-password");
+    document.getElementById("login-error").textContent = "";
+    const password = input.value; input.value = "";
+    try {
+      const login = await fetch("/api/login", { method: "POST", cache: "no-store", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+      const result = await login.json();
+      if (!login.ok) throw new Error(result.error || "Unable to unlock the wizard.");
+      sessionToken = result.token;
+      const response = await apiFetch("/api/config");
+      savedConfig = await response.json();
+      document.getElementById("login-error").textContent = "";
+      document.getElementById("login-panel").hidden = true;
+      document.getElementById("wizard-app").hidden = false;
+      await refreshDashboard();
+    } catch (error) { lockWizard(); document.getElementById("login-error").textContent = error.message; }
+  });
+  document.getElementById("logout-button").addEventListener("click", () => {
+    if (sessionToken) fetch("/api/logout", { method: "POST", cache: "no-store", credentials: "omit", headers: { Authorization: "Bearer " + sessionToken } }).catch(() => {});
+    lockWizard();
+  });
+
   // ── Tab navigation ──
   document.querySelectorAll(".topnav .tab").forEach(tab => {
     tab.addEventListener("click", () => switchTab(tab.dataset.tab));
@@ -210,7 +266,7 @@
   let _pollTimer = null;
   async function refreshDashboard() {
     try {
-      const resp = await fetch("/api/health");
+      const resp = await apiFetch("/api/health");
       const data = await resp.json();
       const apiEl = document.getElementById("st-api");
       const healthEl = document.getElementById("st-health");
@@ -235,8 +291,9 @@
     }
     // Read current config to show provider/model
     try {
-      const resp = await fetch("/api/config");
+      const resp = await apiFetch("/api/config");
       const data = await resp.json();
+      savedConfig = data;
       const env = data.env || {};
       // Determine display provider from base URL
       const baseUrl = env.LLM_VLLM_BASE_URL || "";
@@ -253,7 +310,6 @@
       document.getElementById("st-model").textContent = env.LLM_MODEL || "—";
     } catch {}
   }
-  refreshDashboard();
 
   // ── Providers ──
   const PROVIDERS = [
@@ -315,7 +371,8 @@
         const id = typeof m === "string" ? m : m.id;
         const ctx = (typeof m === "object" && m.context_length) ? (Math.round(m.context_length / 1000) + "k") : "";
         const div = document.createElement("div"); div.className = "sg-item";
-        div.innerHTML = `<span class="sg-id">${id}</span>${ctx ? `<span class="sg-ctx">${ctx}</span>` : ""}`;
+        const label = document.createElement("span"); label.className = "sg-id"; label.textContent = id; div.appendChild(label);
+        if (ctx) { const context = document.createElement("span"); context.className = "sg-ctx"; context.textContent = ctx; div.appendChild(context); }
         div.addEventListener("mousedown", (e) => { e.preventDefault(); input.value = id; dropdown.classList.remove("open"); });
         dropdown.appendChild(div);
       });
@@ -340,7 +397,7 @@
         <div class="field"><label>Nexus API Key</label><div class="hint">From your Nexus dashboard.</div><input type="password" id="api-key" placeholder="Paste your Nexus API key"></div>
         <div class="field"><label>Model</label><div class="hint">Browse models at <a href="https://nexus.dappnode.com/models" target="_blank" style="color:var(--primary)">nexus.dappnode.com/models</a></div><div id="model-container"></div></div>`;
       document.getElementById("model-container").appendChild(createModelInput("std-model", SUGGESTED_MODELS.nexus || [], "e.g. private/deepseek-v3.2"));
-      return;
+      finishProviderConfig(); return;
     }
     if (p.id === "ollama") {
       container.innerHTML = `
@@ -359,7 +416,7 @@
         <div class="subtitle">200+ models with one API key. Models fetched live.</div>
         <div class="field"><label>OpenRouter API Key</label><div class="hint">Get one at openrouter.ai/keys</div><input type="password" id="api-key" placeholder="Paste your API key"></div>
         <div class="field"><label>Model</label><div class="hint">Type to search or enter any model ID.</div><div id="model-container"><div class="model-suggestions sg-loading" style="display:block;position:static">Loading models...</div></div></div>`;
-      fetchOpenRouterModels();
+      finishProviderConfig(); fetchOpenRouterModels();
       return;
     }
     if (p.id === "custom") {
@@ -369,7 +426,7 @@
         <div class="field"><label>Base URL</label><div class="hint">e.g. https://api.example.com/v1</div><input type="text" id="custom-base-url" placeholder="https://api.example.com/v1"></div>
         <div class="field"><label>API Key</label><input type="password" id="api-key" placeholder="sk-..."></div>
         <div class="field"><label>Model</label><input type="text" id="custom-model" placeholder="model-name"></div>`;
-      return;
+      finishProviderConfig(); return;
     }
 
     // Standard providers (openai, anthropic, groq, deepseek)
@@ -381,10 +438,29 @@
       <div class="field"><label>${p.name} API Key</label><div class="hint">Get one at ${hints[p.id] || "the provider's dashboard"}</div><input type="password" id="api-key" placeholder="Paste your API key"></div>
       <div class="field"><label>Model</label><div class="hint">Select or type any supported model ID.</div><div id="model-container"></div></div>`;
     document.getElementById("model-container").appendChild(createModelInput("std-model", suggestions, "Type or select a model..."));
+    finishProviderConfig();
+  }
+
+  function finishProviderConfig() {
+    const input = document.getElementById("api-key");
+    if (!input) return;
+    const configured = Object.values(savedConfig.configuredSecrets || {}).some(Boolean);
+    input.autocomplete = "new-password";
+    input.placeholder = configured ? "Leave blank to keep saved keys" : "Paste your API key";
+    const hint = document.createElement("div"); hint.className = "hint";
+    hint.textContent = "Saved keys are never returned. A blank field keeps them. Enter a new key to replace all provider keys; changing the provider URL requires replacement or explicit clearing.";
+    input.after(hint);
+    const label = document.createElement("label");
+    const clear = document.createElement("input"); clear.type = "checkbox"; clear.id = "clear-api-keys"; clear.style.width = "auto";
+    clear.addEventListener("change", () => { input.disabled = clear.checked; if (clear.checked) input.value = ""; });
+    label.append(clear, document.createTextNode(" Clear all saved provider keys")); hint.after(label);
+    if (selectedProvider.id === "custom") document.getElementById("custom-base-url").value = savedConfig.env.LLM_VLLM_BASE_URL || "";
+    const model = document.getElementById("std-model-input") || document.getElementById("custom-model");
+    if (model && savedConfig.env.LLM_MODEL && (selectedProvider.baseUrl === savedConfig.env.LLM_VLLM_BASE_URL || selectedProvider.id === "custom")) model.value = savedConfig.env.LLM_MODEL;
   }
 
   async function fetchOpenRouterModels() {
-    try { const resp = await fetch("/api/models/openrouter"); const data = await resp.json(); openRouterModels = data.models || []; } catch { openRouterModels = []; }
+    try { const resp = await apiFetch("/api/models/openrouter"); const data = await resp.json(); openRouterModels = data.models || []; } catch { openRouterModels = []; }
     const mc = document.getElementById("model-container"); if (!mc) return; mc.innerHTML = "";
     const suggestions = openRouterModels.length ? openRouterModels : [{ id: "anthropic/claude-sonnet-4-5" }, { id: "openai/gpt-5.2" }, { id: "google/gemini-2.5-pro" }];
     mc.appendChild(createModelInput("or-model", suggestions, openRouterModels.length ? `Search ${openRouterModels.length} models...` : "Type a model ID"));
@@ -396,9 +472,10 @@
     const btn = document.getElementById("probe-btn"); const icon = document.getElementById("probe-icon"); const resultEl = document.getElementById("probe-result");
     btn.disabled = true; icon.textContent = "\u23F3"; resultEl.innerHTML = "";
     try {
-      const resp = await fetch("/api/ollama/probe"); const data = await resp.json();
+      const resp = await apiFetch("/api/ollama/probe"); const data = await resp.json();
       if (data.reachable) {
-        resultEl.innerHTML = `<div class="probe-result ok"><strong>Found Ollama!</strong> at ${data.url}<br>${data.models.length ? "Models: " + data.models.join(", ") : "No models pulled yet."}</div>`;
+        const message = document.createElement("div"); message.className = "probe-result ok";
+        message.textContent = "Found Ollama at " + data.url + ". " + (data.models.length ? "Models: " + data.models.join(", ") : "No models pulled yet."); resultEl.replaceChildren(message);
         document.getElementById("ollama-url").value = data.url;
         if (data.models.length) { const mc = document.getElementById("model-container"); mc.innerHTML = ""; mc.appendChild(createModelInput("ollama-model", data.models, "Select a model...")); document.getElementById("ollama-model-input").value = data.models[0]; }
       } else { resultEl.innerHTML = `<div class="probe-result fail"><strong>No Ollama found.</strong> Make sure an Ollama package is installed.</div>`; }
@@ -438,14 +515,14 @@
     }
 
     // Primary provider (vllm slot)
-    env.LLM_VLLM_API_KEY = apiKey;
+    if (apiKey) env.LLM_VLLM_API_KEY = apiKey;
     env.LLM_VLLM_BASE_URL = baseUrl;
     // Client initialization key
-    env.LLM_OPENAI_API_KEY = apiKey;
+    if (apiKey) env.LLM_OPENAI_API_KEY = apiKey;
     // Backup provider key (same as primary in single-provider mode)
-    env.LLM_OPENAI_COMPATIBLE_API_KEY = apiKey;
+    if (apiKey) env.LLM_OPENAI_COMPATIBLE_API_KEY = apiKey;
     // Embedding key (same provider)
-    env.LLM_EMBEDDING_API_KEY = apiKey;
+    if (apiKey) env.LLM_EMBEDDING_API_KEY = apiKey;
     // Embedding base URL (must point to an endpoint that supports /v1/embeddings)
     env.LLM_EMBEDDING_BASE_URL = baseUrl;
     // Model (used by entrypoint to rewrite config.toml)
@@ -459,9 +536,12 @@
     const lines = [];
     for (const [k, v] of Object.entries(env)) {
       if (k.includes("KEY") || k.includes("TOKEN")) {
-        lines.push(`${k}=${v.slice(0, 8)}${"*".repeat(Math.max(0, v.length - 8))}`);
+        lines.push(`${k}=[replace with entered key]`);
       } else { lines.push(`${k}=${v}`); }
     }
+    const clearing = document.getElementById("clear-api-keys")?.checked;
+    if (clearing) lines.push("Provider API keys: explicitly clear all");
+    else if (!env.LLM_VLLM_API_KEY) lines.push("Provider API keys: keep saved values");
     document.getElementById("env-preview").textContent = lines.join("\n") || "(no changes)";
     goTo(2);
   }
@@ -471,12 +551,16 @@
     btn.disabled = true; btn.textContent = "Saving...";
     const env = buildEnv();
     try {
-      const resp = await fetch("/api/config", {
+      const resp = await apiFetch("/api/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ env, model: env.LLM_MODEL, baseUrl: env.LLM_VLLM_BASE_URL })
+        body: JSON.stringify({ env, clearSecrets: document.getElementById("clear-api-keys")?.checked ? SECRET_KEYS : [] })
       });
-      if (resp.ok) { goTo(3); }
+      if (resp.ok) {
+        document.querySelectorAll('#provider-config input[type="password"]').forEach(input => { input.value = ""; });
+        const current = await apiFetch("/api/config"); savedConfig = await current.json();
+        goTo(3);
+      }
       else { const data = await resp.json(); alert("Failed: " + (data.error || "Unknown error")); btn.disabled = false; btn.textContent = "Save Configuration"; }
     } catch (err) { alert("Network error: " + err.message); btn.disabled = false; btn.textContent = "Save Configuration"; }
   }
