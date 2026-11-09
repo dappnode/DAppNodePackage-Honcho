@@ -1,9 +1,13 @@
 {
   "name": "honcho.dnp.dappnode.eth",
   "version": "0.1.0",
-  "upstreamVersion": "v3.0.6",
-  "upstreamRepo": "plastic-labs/honcho",
-  "upstreamArg": "UPSTREAM_VERSION",
+  "upstream": [
+    {
+      "repo": "plastic-labs/honcho",
+      "version": "v3.0.6",
+      "arg": "UPSTREAM_VERSION"
+    }
+  ],
   "shortDescription": "Self-sovereign AI memory layer for Hermes and OpenClaw agents.",
   "description": "Honcho is an open-source memory platform that gives your AI agents persistent, reasoning-backed memory across sessions. Built directly from upstream plastic-labs/honcho.\n\n**What Honcho does:**\n- Extracts observations from every message (Deriver)\n- Answers natural-language questions about users on demand (Dialectic)\n- Compresses long sessions into concise summaries (Summary)\n- Consolidates and refines stored memories periodically (Dream)\n\n**Endpoint:** `http://honcho.dappnode:8000`\n\n**LLM requirement:** Use the Setup Wizard UI to connect Honcho to any OpenAI-compatible provider (DAppNode Nexus, OpenRouter, OpenAI, Anthropic, Ollama, etc.).",
   "type": "service",
@@ -47,6 +51,6 @@
   },
   "categories": ["Developer tools"],
   "keywords": ["AI", "memory", "agent", "LLM", "Hermes", "Honcho"],
-  "author": Chuy García <chuy@dappnode.io> (https://github.com/dappnode)",
+  "author": "Chuy García <chuy@dappnode.io> (https://github.com/dappnode)",
   "license": "GPL-3.0"
 }
